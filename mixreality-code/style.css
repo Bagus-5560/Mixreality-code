@@ -1,0 +1,83 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    overflow: hidden;
+    background-color: #000;
+    position: relative;
+    width: 100vw;
+    height: 100vh;
+}
+
+/* Desain Tombol Kanan Atas */
+#btn-tracking {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    z-index: 10; /* Paling atas biar bisa diklik */
+    padding: 12px 24px;
+    background-color: #ff9d00;
+    border: none;
+    border-radius: 8px;
+    color: #000;
+    font-weight: bold;
+    font-family: sans-serif;
+    cursor: pointer;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+    transition: 0.2s;
+}
+
+#btn-tracking:active {
+    transform: scale(0.95);
+}
+
+#webcam {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    object-fit: cover;
+    z-index: 1;
+    transform: scaleX(-1); /* Mirror */
+}
+
+/* Canvas untuk garis merah hijau MediaPipe */
+#tracking_canvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    z-index: 2; /* Di atas webcam */
+    pointer-events: none;
+    transform: scaleX(-1); /* Wajib mirror juga */
+}
+
+/* Canvas 3D Three.js */
+#output_canvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    z-index: 3; /* Paling atas di bawah tombol */
+    pointer-events: none;
+}
+/* Desain Teks Status di Kiri Atas */
+#status {
+    position: absolute;
+    top: 20px;
+    left: 20px;
+    z-index: 10;
+    color: #ffffff;
+    padding: 10px 20px;
+    border-radius: 8px;
+    font-family: sans-serif;
+    font-size: 14px;
+    pointer-events: none; /* Biar nggak menghalangi klik */
+    transition: 0.3s;
+}
