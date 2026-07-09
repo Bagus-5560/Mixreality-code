@@ -1,0 +1,147 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    overflow: hidden;
+    background-color: #000;
+    position: relative;
+    width: 100vw;
+    height: 100vh;
+}
+
+/* Desain Tombol Kanan Atas */
+#btn-tracking {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    z-index: 10; /* Paling atas biar bisa diklik */
+    padding: 12px 24px;
+    background-color: #ff9d00;
+    border: none;
+    border-radius: 8px;
+    color: #000;
+    font-weight: bold;
+    font-family: sans-serif;
+    cursor: pointer;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+    transition: 0.2s;
+}
+
+#btn-tracking:active {
+    transform: scale(0.95);
+}
+
+#webcam {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    object-fit: cover;
+    z-index: 1;
+    transform: scaleX(-1); /* Mirror */
+}
+
+/* Canvas untuk garis merah hijau MediaPipe */
+#tracking_canvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    z-index: 2; /* Di atas webcam */
+    pointer-events: none;
+    transform: scaleX(-1); /* Wajib mirror juga */
+}
+
+/* Canvas 3D Three.js */
+#output_canvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    z-index: 3; /* Paling atas di bawah tombol */
+    pointer-events: none;
+}
+/* Desain Teks Status di Kiri Atas */
+#status {
+    position: absolute;
+    top: 20px;
+    left: 20px;
+    z-index: 10;
+    color: #ffffff;
+    padding: 10px 20px;
+    border-radius: 8px;
+    font-family: sans-serif;
+    font-size: 14px;
+    pointer-events: none; /* Biar nggak menghalangi klik */
+    transition: 0.3s;
+}
+
+/* --- Screen layout --- */
+.screen { position: absolute; inset: 0; display: none; background: linear-gradient(180deg,#f6fbff 0%, #fff 60%); }
+.screen.active { display: block; }
+
+/* Home screen */
+.home-header { display:flex; align-items:center; gap:16px; padding:28px 20px 0 20px; }
+.avatar { width:88px; height:88px; background:#fff; border-radius:24px; display:flex; align-items:center; justify-content:center; font-size:44px; box-shadow:0 6px 16px rgba(0,0,0,0.12); }
+.greeting h2 { font-size:20px; color:#0b6; margin-bottom:6px; }
+.greeting p { font-size:13px; color:#666; }
+
+.home-main { display:flex; flex-direction:column; gap:18px; padding:28px 20px; }
+.big-btn { display:flex; flex-direction:column; align-items:flex-start; gap:6px; padding:18px 22px; border-radius:28px; color:#fff; font-size:18px; font-weight:700; border:none; box-shadow:0 8px 18px rgba(0,0,0,0.12); }
+.big-btn .sub { display:block; font-size:13px; font-weight:500; opacity:0.9; }
+.big-btn.yellow { background:#FFD24D; color:#4b3b00 }
+.big-btn.green { background:#3EC77B; }
+.big-btn.blue { background:#48A9FF; }
+
+.home-bottomnav, .builder-bottomnav { position:fixed; left:0; right:0; bottom:14px; display:flex; justify-content:space-around; padding:8px 40px; z-index:20; }
+.nav-item { width:58px; height:58px; border-radius:14px; background:#fff; border:none; box-shadow:0 8px 18px rgba(0,0,0,0.12); font-size:20px; }
+.nav-item.active { background:#00a8ff; color:#fff; }
+
+/* Builder/AR overlays */
+#webcam { position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; object-fit: cover; z-index: 1; transform: scaleX(-1); }
+#tracking_canvas { position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 2; pointer-events: none; transform: scaleX(-1); }
+#output_canvas { position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 3; pointer-events: none; }
+
+#btn-tracking { position: absolute; top: 18px; right: 20px; z-index: 20; padding: 12px 18px; background: #FFD24D; border-radius: 12px; border:none; font-weight:700; box-shadow:0 6px 12px rgba(0,0,0,0.18); }
+
+/* Kita pindahkan fungsi tombol kamera ke FAB bawah, jadi sembunyikan tombol atas */
+#btn-tracking { display: none !important; }
+
+.right-controls { position: absolute; right: 14px; top: 120px; display:flex; flex-direction:column; gap:12px; z-index:22; }
+.rc-btn { width:52px; height:52px; border-radius:12px; border:none; background:linear-gradient(180deg,#fff,#f0f0f0); box-shadow:0 8px 20px rgba(0,0,0,0.12); font-size:20px }
+.rc-btn.delete {
+    transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+.rc-btn.delete.active {
+    background: linear-gradient(135deg, #ff4b4b, #ff2a2a) !important;
+    color: white !important;
+    box-shadow: 0 8px 25px rgba(255, 75, 75, 0.5);
+    transform: scale(1.1);
+}
+
+.bottom-fab { position: absolute; left: 50%; transform: translateX(-50%); bottom: 88px; display:flex; align-items:center; gap:18px; z-index:21; }
+.camera-btn { width:78px; height:78px; background:#fff; border-radius:50%; border:none; box-shadow:0 12px 28px rgba(0,0,0,0.18); font-size:26px; transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
+.camera-btn.active {
+    background: linear-gradient(135deg, #00c6ff, #0072ff);
+    color: white;
+    box-shadow: 0 8px 25px rgba(0, 114, 255, 0.4);
+    transform: scale(1.05);
+}
+.carousel { display:flex; gap:10px; padding:10px; background:rgba(255,255,255,0.95); border-radius:14px; box-shadow:0 8px 20px rgba(0,0,0,0.08); align-items:center; }
+.carousel .block { width:54px; height:54px; border-radius:8px; border:none; font-size:22px; color:#fff }
+.carousel .blue { background:#2B9CFF }
+.carousel .yellow { background:#FFD24D; color:#3b2b00 }
+.carousel .green { background:#39C07A }
+.carousel .red { background:#FF6B6B }
+
+/* small responsive tweaks */
+@media (max-width:480px) {
+    .avatar { width:68px; height:68px; font-size:32px }
+    .big-btn { padding:14px 18px; border-radius:22px }
+}
