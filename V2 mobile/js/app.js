@@ -179,6 +179,7 @@ let showTracking = false;
 let cameraActive = false;
 let btnCooldown = 0;
 let cameraUtils;
+let currentFacingMode = 'environment'; // 'environment' = kamera belakang, 'user' = kamera depan
 
 const trackingCanvas = document.getElementById('tracking_canvas');
 const trackingCtx = trackingCanvas.getContext('2d');
@@ -191,11 +192,118 @@ const statusEl = document.getElementById('status');
 const cameraBtn = document.getElementById('camera-btn');
 
 // ==========================================
-// 3. FUNGSI BANTUAN MATEMATIKA & KAMERA
+// 3. DEVICE ORIENTATION (AR SENSOR)
+// ==========================================
+let orientationActive = false;
+let deviceAlpha = 0, deviceBeta = 90, deviceGamma = 0;
+
+// Quaternion helpers untuk konversi Device Orientation → Three.js camera
+const _zee = new THREE.Vector3(0, 0, 1);
+const _q0 = new THREE.Quaternion();
+const _q1 = new THREE.Quaternion(-Math.sqrt(0.5), 0, 0, Math.sqrt(0.5)); // -90° di X
+const _deviceQuaternion = new THREE.Quaternion();
+const _deviceEuler = new THREE.Euler();
+
+// Kalibrasi: simpan orientasi awal HP sebagai titik nol
+let _calibrationQuaternion = null;
+const _calibrationInverse = new THREE.Quaternion();
+
+// Raycaster untuk konversi koordinat tangan → dunia 3D saat AR mode
+const _raycaster = new THREE.Raycaster();
+const _arPlane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0); // plane z=0
+const _intersectPoint = new THREE.Vector3();
+const _screenCoord = new THREE.Vector2();
+
+function onDeviceOrientation(event) {
+    if (event.alpha === null) return;
+    deviceAlpha = event.alpha;
+    deviceBeta = event.beta;
+    deviceGamma = event.gamma;
+}
+
+function startOrientation() {
+    _calibrationQuaternion = null; // Reset kalibrasi saat mulai ulang
+    if (typeof DeviceOrientationEvent !== 'undefined' &&
+        typeof DeviceOrientationEvent.requestPermission === 'function') {
+        // iOS 13+ memerlukan izin eksplisit
+        DeviceOrientationEvent.requestPermission()
+            .then(response => {
+                if (response === 'granted') {
+                    window.addEventListener('deviceorientation', onDeviceOrientation, true);
+                    orientationActive = true;
+                }
+            })
+            .catch(err => console.error('Izin orientasi ditolak:', err));
+    } else {
+        // Android & browser lain — langsung aktif
+        window.addEventListener('deviceorientation', onDeviceOrientation, true);
+        orientationActive = true;
+    }
+}
+
+function stopOrientation() {
+    window.removeEventListener('deviceorientation', onDeviceOrientation, true);
+    orientationActive = false;
+    _calibrationQuaternion = null;
+    // Reset kamera ke posisi default
+    camera.quaternion.set(0, 0, 0, 1);
+    camera.position.set(0, 0, 10);
+}
+
+// Hitung quaternion orientasi absolut dari sensor HP
+function _computeDeviceQuaternion() {
+    const alpha = THREE.MathUtils.degToRad(deviceAlpha);
+    const beta = THREE.MathUtils.degToRad(deviceBeta);
+    const gamma = THREE.MathUtils.degToRad(deviceGamma);
+    const orient = THREE.MathUtils.degToRad(window.orientation || 0);
+
+    _deviceEuler.set(beta, alpha, -gamma, 'YXZ');
+    _deviceQuaternion.setFromEuler(_deviceEuler);
+    _deviceQuaternion.multiply(_q1);
+    _deviceQuaternion.multiply(_q0.setFromAxisAngle(_zee, -orient));
+
+    return _deviceQuaternion;
+}
+
+// Terapkan orientasi device ke kamera Three.js (RELATIF, bukan absolut)
+function applyDeviceOrientation() {
+    if (!orientationActive) return;
+
+    const currentQuat = _computeDeviceQuaternion();
+
+    // Kalibrasi: simpan orientasi pertama sebagai "titik nol"
+    // Saat pertama kali, orientasi HP = default view (melihat objek)
+    if (!_calibrationQuaternion) {
+        _calibrationQuaternion = currentQuat.clone();
+        _calibrationInverse.copy(_calibrationQuaternion).invert();
+    }
+
+    // Hitung rotasi RELATIF: perbedaan dari orientasi awal
+    // Ini membuat: posisi awal HP = melihat objek, gerakkan HP = parallax AR
+    const relativeQuat = _calibrationInverse.clone().multiply(currentQuat);
+    camera.quaternion.copy(relativeQuat);
+}
+
+// ==========================================
+// 3B. FUNGSI BANTUAN MATEMATIKA & KAMERA
 // ==========================================
 function mapTo3DSpace(x, y) {
-    const mirroredX = 1 - x;
-    return { x: (mirroredX - 0.5) * 14, y: -(y - 0.5) * 10 };
+    if (orientationActive) {
+        // AR MODE: Raycast dari kamera melalui titik layar ke plane z=0
+        _screenCoord.set(x * 2 - 1, -(y * 2 - 1));
+        _raycaster.setFromCamera(_screenCoord, camera);
+
+        if (_raycaster.ray.intersectPlane(_arPlane, _intersectPoint)) {
+            // Batasi agar tidak terlalu jauh (saat kamera mendekati paralel dengan plane)
+            const cx = THREE.MathUtils.clamp(_intersectPoint.x, -12, 12);
+            const cy = THREE.MathUtils.clamp(_intersectPoint.y, -8, 10);
+            return { x: cx, y: cy };
+        }
+    }
+
+    // FALLBACK / MODE NON-AR (kamera depan)
+    const finalX = currentFacingMode === 'user' ? (1 - x) : x;
+    return { x: (finalX - 0.5) * 14, y: -(y - 0.5) * 10 };
 }
 
 function getDistance(p1, p2) {
@@ -212,50 +320,94 @@ function updateStatus(message, isError = false) {
 }
 
 // Fungsi Menyalakan Kamera Tanpa Bentrok
-function startCamera() {
+let _animFrameId = null;
+
+async function startCamera() {
     updateStatus('Meminta akses kamera...');
 
-    if (!cameraUtils) {
-        cameraUtils = new Camera(videoElement, {
-            onFrame: async () => {
-                if (videoElement.readyState >= 2) {
-                    await hands.send({ image: videoElement });
-                }
-            },
-            width: 640,
-            height: 480
-        });
+    // Hentikan stream sebelumnya jika ada
+    if (videoElement.srcObject) {
+        videoElement.srcObject.getTracks().forEach(track => track.stop());
+        videoElement.srcObject = null;
     }
 
-    cameraUtils.start()
-        .then(() => {
-            updateStatus('Kamera aktif. Tunjukkan tangan ke depan kamera.');
-            // show tracking by default when camera starts
-            showTracking = true;
-            cameraActive = true;
-            virtualBtn.material.color.setHex(0x00ff00);
-            if (cameraBtn) cameraBtn.classList.add('active');
-        })
-        .catch((error) => {
-            console.error('Gagal mengakses kamera:', error);
-            updateStatus('Gagal menyalakan kamera. Izinkan kamera di browser.', true);
-            cameraActive = false;
-            if (cameraBtn) cameraBtn.classList.remove('active');
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+            video: {
+                facingMode: currentFacingMode,
+                width: { ideal: 640 },
+                height: { ideal: 480 }
+            }
         });
+
+        videoElement.srcObject = stream;
+        await videoElement.play();
+
+        cameraActive = true;
+        showTracking = true;
+        virtualBtn.material.color.setHex(0x00ff00);
+        if (cameraBtn) cameraBtn.classList.add('active');
+
+        // Mirror video hanya untuk kamera depan, kamera belakang tidak mirror
+        const mirrorValue = currentFacingMode === 'user' ? 'scaleX(-1)' : 'scaleX(1)';
+        videoElement.style.transform = mirrorValue;
+        trackingCanvas.style.transform = mirrorValue;
+
+        // Aktifkan Device Orientation untuk kamera belakang (AR mode)
+        if (currentFacingMode === 'environment') {
+            startOrientation();
+        }
+
+        const label = currentFacingMode === 'environment' ? 'belakang (AR)' : 'depan';
+        updateStatus('Kamera ' + label + ' aktif. Tunjukkan tangan ke depan kamera.');
+
+        // Mulai loop pengiriman frame ke MediaPipe Hands
+        function processFrame() {
+            if (!cameraActive) return;
+            if (videoElement.readyState >= 2) {
+                hands.send({ image: videoElement }).then(() => {
+                    _animFrameId = requestAnimationFrame(processFrame);
+                });
+            } else {
+                _animFrameId = requestAnimationFrame(processFrame);
+            }
+        }
+        processFrame();
+
+    } catch (error) {
+        console.error('Gagal mengakses kamera:', error);
+        updateStatus('Gagal menyalakan kamera. Izinkan kamera di browser.', true);
+        cameraActive = false;
+        if (cameraBtn) cameraBtn.classList.remove('active');
+    }
+}
+
+// Fungsi Switch Kamera Depan/Belakang
+function switchCamera() {
+    currentFacingMode = currentFacingMode === 'environment' ? 'user' : 'environment';
+    stopCamera();
+    // Beri sedikit waktu agar kamera sebelumnya benar-benar berhenti
+    setTimeout(() => {
+        startCamera();
+    }, 300);
 }
 
 // Fungsi Mematikan Kamera
 function stopCamera() {
-    if (cameraUtils) {
-        try { cameraUtils.stop(); } catch (e) { }
-        cameraUtils = null;
+    cameraActive = false;
+    if (_animFrameId) {
+        cancelAnimationFrame(_animFrameId);
+        _animFrameId = null;
+    }
+    // Matikan Device Orientation (AR sensor)
+    if (orientationActive) {
+        stopOrientation();
     }
     // Hentikan track video secara manual untuk mematikan lampu indikator kamera
     if (videoElement.srcObject) {
         videoElement.srcObject.getTracks().forEach(track => track.stop());
         videoElement.srcObject = null;
     }
-    cameraActive = false;
     showTracking = false;
     virtualBtn.material.color.setHex(0xff9d00); // orange
     updateStatus('Kamera dinonaktifkan.');
@@ -319,7 +471,7 @@ hands.onResults((results) => {
         // --- PINCH TO CLICK HTML BUTTONS ---
         let clickedHTMLButton = false;
         if (isHand1Pinching && btnCooldown === 0) {
-            const screenX = (1 - midX1) * window.innerWidth;
+            const screenX = (currentFacingMode === 'user' ? (1 - midX1) : midX1) * window.innerWidth;
             const screenY = midY1 * window.innerHeight;
             const element = document.elementFromPoint(screenX, screenY);
             if (element) {
@@ -478,6 +630,9 @@ hands.onResults((results) => {
 function animate() {
     requestAnimationFrame(animate);
 
+    // Terapkan Device Orientation ke kamera (AR mode)
+    applyDeviceOrientation();
+
     // Majukan simulasi fisika Cannon.js
     world.step(1 / 60);
 
@@ -593,6 +748,16 @@ if (btnDelete) {
             btnDelete.classList.remove('active');
             updateStatus('Mode Hapus Nonaktif.');
         }
+    });
+}
+
+// Tombol Ganti Kamera (Depan/Belakang)
+const btnSwitchCam = document.getElementById('btn-switch-cam');
+if (btnSwitchCam) {
+    btnSwitchCam.addEventListener('click', () => {
+        switchCamera();
+        btnSwitchCam.style.transform = 'scale(0.9)';
+        setTimeout(() => btnSwitchCam.style.transform = '', 150);
     });
 }
 
