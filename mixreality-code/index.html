@@ -142,6 +142,40 @@
             <button id="camera-btn" class="camera-btn">📷</button>
         </div>
 
+        <!-- Level Selector Overlay (Susun Balok Mode) -->
+        <div id="level-selector-overlay" class="level-overlay hidden">
+            <div class="level-card">
+                <h2>Tantangan Susun Balok</h2>
+                <p>Pilih tingkat kesulitan menara yang ingin Anda bangun:</p>
+                <div class="level-buttons">
+                    <button class="lvl-btn easy" data-level="easy">🟢 Mudah (Menara Dasar)</button>
+                    <button class="lvl-btn medium" data-level="medium">🟡 Sedang (Menara Gerbang)</button>
+                    <button class="lvl-btn hard" data-level="hard">🔴 Sulit (Kastil Megah)</button>
+                </div>
+                <button id="btn-close-level-selector" class="lvl-btn-back">Kembali</button>
+            </div>
+        </div>
+
+        <!-- Success Modal Overlay -->
+        <div id="success-modal" class="level-overlay hidden">
+            <div class="level-card success-card">
+                <h2>🎉 Luar Biasa! 🎉</h2>
+                <p>Anda berhasil menyusun menara sesuai dengan blueprint!</p>
+                <button id="btn-success-retry" class="lvl-btn easy" style="width: 100%; justify-content: center; margin-bottom: 10px;">Main Lagi</button>
+                <button id="btn-success-levels" class="lvl-btn-back">Pilih Level Lain</button>
+            </div>
+        </div>
+
+        <!-- Game HUD -->
+        <div id="game-hud" class="game-hud hidden">
+            <div class="hud-title">Tantangan: <span id="hud-level-name">-</span></div>
+            <div class="hud-status">Kumpulkan balok sesuai panduan hologram.</div>
+            <div class="hud-buttons">
+                <button id="btn-reset-level" class="hud-btn reset">🔄 Reset</button>
+                <button id="btn-exit-level" class="hud-btn exit">🚪 Keluar</button>
+            </div>
+        </div>
+
         <nav class="builder-bottomnav">
             <button id="nav-home-2" class="nav-item">🏠</button>
             <button id="nav-builder-2" class="nav-item active">📷</button>

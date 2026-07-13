@@ -16,10 +16,47 @@ const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
 dirLight.position.set(5, 10, 5);
 scene.add(dirLight);
 
+// Fungsi untuk membuat tekstur lantai kotak-kotak (checkered/grid floor)
+function createCheckeredTexture() {
+    const canvas = document.createElement('canvas');
+    canvas.width = 128;
+    canvas.height = 128;
+    const ctx = canvas.getContext('2d');
+
+    // Warna ubin 1
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, 128, 128);
+
+    // Warna ubin 2
+    ctx.fillStyle = '#e2e8f0';
+    ctx.fillRect(0, 0, 64, 64);
+    ctx.fillRect(64, 64, 64, 64);
+
+    // Garis pembatas kotak-kotak agar lebih presisi
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.1)';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(0, 0, 128, 128);
+    ctx.strokeRect(0, 0, 64, 64);
+    ctx.strokeRect(64, 64, 64, 64);
+
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.wrapS = THREE.RepeatWrapping;
+    texture.wrapT = THREE.RepeatWrapping;
+    // Sesuaikan repetisi agar ukuran kotak proporsional (lebar 20, tinggi 10)
+    texture.repeat.set(20, 10);
+    return texture;
+}
+
 // Lantai Virtual (Batas Bawah)
 const floorY = -3;
 const floorGeometry = new THREE.PlaneGeometry(20, 10);
-const floorMaterial = new THREE.MeshBasicMaterial({ color: 0x4a4a4a, wireframe: true, transparent: true, opacity: 0.3 });
+const floorTexture = createCheckeredTexture();
+const floorMaterial = new THREE.MeshBasicMaterial({
+    map: floorTexture,
+    transparent: true,
+    opacity: 0.4,
+    side: THREE.DoubleSide
+});
 const floor = new THREE.Mesh(floorGeometry, floorMaterial);
 floor.rotation.x = Math.PI / -2;
 floor.position.y = floorY;
@@ -31,23 +68,32 @@ scene.add(floor);
 const world = new CANNON.World();
 world.gravity.set(0, -38, 0); // Gravitasi disesuaikan agar terasa nyata dan cepat pada skala visual ini
 world.broadphase = new CANNON.NaiveBroadphase();
-world.solver.iterations = 10;
+world.solver.iterations = 40; // Tingkatkan dari 10 ke 40 untuk kestabilan penumpukan tinggi
+world.allowSleep = true; // Izinkan objek tidur (beku) jika diam untuk menghilangkan getaran
 
 // Material fisika untuk interaksi (Friction & Restitution)
 const groundMaterial = new CANNON.Material("groundMaterial");
 const blockMaterial = new CANNON.Material("blockMaterial");
 
-// Kontak antara balok dengan lantai (Friction tinggi)
+// Kontak antara balok dengan lantai (Friction tinggi, kontak kaku)
 const groundBlockContact = new CANNON.ContactMaterial(groundMaterial, blockMaterial, {
     friction: 0.9,
-    restitution: 0.1
+    restitution: 0.05,
+    contactEquationStiffness: 1e7,
+    contactEquationRelaxation: 3,
+    frictionEquationStiffness: 1e7,
+    frictionEquationRelaxation: 3
 });
 world.addContactMaterial(groundBlockContact);
 
-// Kontak sesama balok (Friction maksimal & tanpa pantulan agar ditumpuk stabil)
+// Kontak sesama balok (Friction maksimal, tanpa pantulan, kontak kaku untuk kestabilan tumpukan)
 const blockBlockContact = new CANNON.ContactMaterial(blockMaterial, blockMaterial, {
     friction: 1.0,
-    restitution: 0.0
+    restitution: 0.0,
+    contactEquationStiffness: 1e7,
+    contactEquationRelaxation: 3,
+    frictionEquationStiffness: 1e7,
+    frictionEquationRelaxation: 3
 });
 world.addContactMaterial(blockBlockContact);
 
@@ -67,6 +113,43 @@ let blocks = [];
 let deleteMode = false;
 let grabbedBlock = null;
 let activePaintColor = null;
+
+// Game Mode State Variables (Susun Balok)
+let isGameMode = false;
+let currentGameLevel = null;
+let gameWinChecked = false;
+let blueprintObjects = [];
+
+const blueprintsData = {
+    easy: {
+        name: "Menara Dasar (Mudah)",
+        items: [
+            { shape: 'plank', pos: { x: 0, y: floorY + 0.25, z: 0 }, scale: 0.5, color: 0xFFD24D },
+            { shape: 'cube', pos: { x: 0, y: floorY + 0.5 + 0.5, z: 0 }, scale: 0.5, color: 0x2B9CFF },
+            { shape: 'tri', pos: { x: 0, y: floorY + 1.0 + 0.5 + 0.6, z: 0 }, scale: 0.5, color: 0xFF6B6B }
+        ]
+    },
+    medium: {
+        name: "Menara Gerbang (Sedang)",
+        items: [
+            { shape: 'arch', pos: { x: 0, y: floorY + 0.7, z: 0 }, scale: 0.5, color: 0xFF6B6B },
+            { shape: 'plank', pos: { x: 0, y: floorY + 1.4 + 0.25, z: 0 }, scale: 0.5, color: 0xFFD24D },
+            { shape: 'cylinder', pos: { x: -0.6, y: floorY + 1.65 + 0.25 + 0.6, z: 0 }, scale: 0.5, color: 0xFF9D00 },
+            { shape: 'cylinder', pos: { x: 0.6, y: floorY + 1.65 + 0.25 + 0.6, z: 0 }, scale: 0.5, color: 0xFF9D00 }
+        ]
+    },
+    hard: {
+        name: "Kastil Megah (Sulit)",
+        items: [
+            { shape: 'arch', pos: { x: 0, y: floorY + 0.7, z: 0 }, scale: 0.5, color: 0xFF6B6B },
+            { shape: 'cube', pos: { x: -1.5, y: floorY + 0.5, z: 0 }, scale: 0.5, color: 0x2B9CFF },
+            { shape: 'cube', pos: { x: 1.5, y: floorY + 0.5, z: 0 }, scale: 0.5, color: 0x2B9CFF },
+            { shape: 'plank', pos: { x: 0, y: floorY + 1.65, z: 0 }, scale: 0.5, color: 0xFFD24D },
+            { shape: 'pyramid', pos: { x: -1.5, y: floorY + 1.0 + 0.6, z: 0 }, scale: 0.5, color: 0x39C07A },
+            { shape: 'pyramid', pos: { x: 1.5, y: floorY + 1.0 + 0.6, z: 0 }, scale: 0.5, color: 0x39C07A }
+        ]
+    }
+};
 
 // --- SISTEM UNDO & REDO ---
 const undoStack = [];
@@ -174,6 +257,7 @@ function updatePhysicsShape(block, scale) {
     block.body.shapeOrientations.length = 0;
 
     let physicsShape;
+    let shapeOrientation = null;
 
     switch (block.shape) {
         case 'cube':
@@ -184,10 +268,14 @@ function updatePhysicsShape(block, scale) {
             break;
         case 'tri':
         case 'pyramid':
-            physicsShape = new CANNON.Box(new CANNON.Vec3(1.6 * scale, 1.2 * scale, 1.6 * scale));
+            physicsShape = new CANNON.Cylinder(0, 1.6 * scale, 2.4 * scale, 8);
+            shapeOrientation = new CANNON.Quaternion();
+            shapeOrientation.setFromAxisAngle(new CANNON.Vec3(1, 0, 0), -Math.PI / 2);
             break;
         case 'cylinder':
-            physicsShape = new CANNON.Box(new CANNON.Vec3(0.8 * scale, 1.2 * scale, 0.8 * scale));
+            physicsShape = new CANNON.Cylinder(0.8 * scale, 0.8 * scale, 2.4 * scale, 12);
+            shapeOrientation = new CANNON.Quaternion();
+            shapeOrientation.setFromAxisAngle(new CANNON.Vec3(1, 0, 0), -Math.PI / 2);
             break;
         case 'halfsphere':
             physicsShape = new CANNON.Box(new CANNON.Vec3(1.2 * scale, 0.6 * scale, 1.2 * scale));
@@ -201,10 +289,11 @@ function updatePhysicsShape(block, scale) {
         default:
             physicsShape = new CANNON.Box(new CANNON.Vec3(1 * scale, 1 * scale, 1 * scale));
     }
-    block.body.addShape(physicsShape);
+    block.body.addShape(physicsShape, new CANNON.Vec3(0, 0, 0), shapeOrientation);
     block.body.updateMassProperties();
     block.body.updateBoundingRadius();
     block.body.computeAABB();
+    block.body.wakeUp(); // Bangunkan bodi fisik saat ukurannya diubah
 }
 
 // Fungsi Menambahkan Balok Baru ke Scene (dengan rigid body fisika)
@@ -244,6 +333,7 @@ function spawnBlock(shape, colorHex, x = 0, y = 0, z = 0) {
 
     // --- FISIKA CANNON.JS ---
     let physicsShape;
+    let shapeOrientation = null;
     switch (shape) {
         case 'cube':
             physicsShape = new CANNON.Box(new CANNON.Vec3(0.5, 0.5, 0.5));
@@ -253,10 +343,16 @@ function spawnBlock(shape, colorHex, x = 0, y = 0, z = 0) {
             break;
         case 'tri':
         case 'pyramid':
-            physicsShape = new CANNON.Box(new CANNON.Vec3(0.8, 0.6, 0.8));
+            // Cone: top radius 0, bottom radius 0.8, height 1.2
+            physicsShape = new CANNON.Cylinder(0, 0.8, 1.2, 8);
+            shapeOrientation = new CANNON.Quaternion();
+            shapeOrientation.setFromAxisAngle(new CANNON.Vec3(1, 0, 0), -Math.PI / 2);
             break;
         case 'cylinder':
-            physicsShape = new CANNON.Box(new CANNON.Vec3(0.4, 0.6, 0.4));
+            // Cylinder: top radius 0.4, bottom radius 0.4, height 1.2
+            physicsShape = new CANNON.Cylinder(0.4, 0.4, 1.2, 12);
+            shapeOrientation = new CANNON.Quaternion();
+            shapeOrientation.setFromAxisAngle(new CANNON.Vec3(1, 0, 0), -Math.PI / 2);
             break;
         case 'halfsphere':
             physicsShape = new CANNON.Box(new CANNON.Vec3(0.6, 0.3, 0.6));
@@ -275,10 +371,17 @@ function spawnBlock(shape, colorHex, x = 0, y = 0, z = 0) {
         mass: 1, // dinamis
         material: blockMaterial
     });
-    body.addShape(physicsShape);
+    body.addShape(physicsShape, new CANNON.Vec3(0, 0, 0), shapeOrientation);
+    
+    // Konfigurasi tidur (sleep) agar tumpukan stabil dan tidak bergetar/bergeser sendiri
+    body.allowSleep = true;
+    body.sleepSpeedLimit = 0.05; // Lebih sensitif (kecepatan < 0.05 m/s)
+    body.sleepTimeLimit = 1.0;  // Harus benar-benar diam selama 1.0 detik sebelum beku
+    
     body.computeAABB();
     body.position.set(x, y, z);
     world.addBody(body);
+    body.wakeUp(); // Bangunkan bodi agar gravitasi langsung bekerja saat spawn
 
     const blockObj = {
         mesh: mesh,
@@ -600,6 +703,7 @@ hands.onResults((results) => {
                         grabbedBlock.body.type = CANNON.Body.DYNAMIC;
                         grabbedBlock.body.velocity.set(0, 0, 0);
                         grabbedBlock.body.angularVelocity.set(0, 0, 0);
+                        grabbedBlock.body.wakeUp(); // Bangunkan bodi agar gravitasi langsung bekerja saat dilepas
 
                         // Cek apakah posisi berubah signifikan setelah digerakkan
                         if (grabbedBlock.startPosition) {
@@ -667,6 +771,7 @@ hands.onResults((results) => {
 
                     grabbedBlock = closestBlock;
                     grabbedBlock.isGrabbed = true;
+                    grabbedBlock.body.wakeUp(); // Bangunkan bodi fisik jika sebelumnya sedang tidur (beku)
                     grabbedBlock.velocityY = 0;
 
                     // Simpan posisi & rotasi sebelum digenggam/digerakkan
@@ -714,6 +819,7 @@ hands.onResults((results) => {
             grabbedBlock.body.type = CANNON.Body.DYNAMIC;
             grabbedBlock.body.velocity.set(0, 0, 0);
             grabbedBlock.body.angularVelocity.set(0, 0, 0);
+            grabbedBlock.body.wakeUp(); // Bangunkan bodi agar gravitasi langsung bekerja saat dilepas
 
             // Cek apakah posisi berubah signifikan setelah digerakkan
             if (grabbedBlock.startPosition) {
@@ -836,6 +942,9 @@ function animate() {
     // Update floating size info
     updateScaleBadge();
 
+    // Periksa kondisi kemenangan permainan jika mode game aktif
+    checkGameWinCondition();
+
     for (let i = blocks.length - 1; i >= 0; i--) {
         const block = blocks[i];
 
@@ -902,10 +1011,26 @@ function showScreen(name) {
     }
 }
 
-if (navHome) navHome.addEventListener('click', () => showScreen('home'));
-if (navBuilder) navBuilder.addEventListener('click', () => showScreen('builder'));
-if (navHome2) navHome2.addEventListener('click', () => showScreen('home'));
-if (navBuilder2) navBuilder2.addEventListener('click', () => showScreen('builder'));
+if (navHome) navHome.addEventListener('click', () => {
+    exitLevel();
+});
+if (navBuilder) navBuilder.addEventListener('click', () => {
+    isGameMode = false;
+    clearLevel();
+    const hud = document.getElementById('game-hud');
+    if (hud) hud.classList.add('hidden');
+    showScreen('builder');
+});
+if (navHome2) navHome2.addEventListener('click', () => {
+    exitLevel();
+});
+if (navBuilder2) navBuilder2.addEventListener('click', () => {
+    isGameMode = false;
+    clearLevel();
+    const hud = document.getElementById('game-hud');
+    if (hud) hud.classList.add('hidden');
+    showScreen('builder');
+});
 
 // Carousel: highlight selection + spawn shape
 const carousel = document.getElementById('carousel');
@@ -1070,6 +1195,254 @@ if (btnColorPicker && colorPalette) {
 
         updateStatus('Warna aktif dipilih. Cubit balok untuk mewarnai!');
         colorPalette.classList.add('hidden'); // Sembunyikan palette
+    });
+}
+
+function createBlueprintGeometry(shape) {
+    let geo;
+    switch (shape) {
+        case 'cube': geo = new THREE.BoxGeometry(2, 2, 2); break;
+        case 'plank': geo = new THREE.BoxGeometry(4, 1, 2); break;
+        case 'tri': geo = new THREE.ConeGeometry(1.6, 2.4, 3); break;
+        case 'pyramid': geo = new THREE.ConeGeometry(1.6, 2.4, 4); break;
+        case 'cylinder': geo = new THREE.CylinderGeometry(0.8, 0.8, 2.4, 16); break;
+        case 'halfsphere': geo = new THREE.SphereGeometry(1.2, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2); break;
+        case 'arch': {
+            const archShape = new THREE.Shape();
+            archShape.moveTo(-1.8, -1.4);
+            archShape.lineTo(-1.8, 1.4);
+            archShape.lineTo(1.8, 1.4);
+            archShape.lineTo(1.8, -1.4);
+            archShape.lineTo(0.9, -1.4);
+            archShape.absarc(0, -1.4, 0.9, 0, Math.PI, false);
+            archShape.lineTo(-0.9, -1.4);
+            const extrudeSettings = { depth: 1.6, bevelEnabled: false };
+            geo = new THREE.ExtrudeGeometry(archShape, extrudeSettings);
+            geo.translate(0, 0, -0.8);
+            break;
+        }
+        case 'pent': geo = new THREE.DodecahedronGeometry(1.6); break;
+        default: geo = new THREE.BoxGeometry(2, 2, 2);
+    }
+    return geo;
+}
+
+function startLevel(levelKey) {
+    clearLevel();
+    isGameMode = true;
+    currentGameLevel = levelKey;
+    gameWinChecked = false;
+    
+    // Tampilkan HUD
+    const hud = document.getElementById('game-hud');
+    const hudName = document.getElementById('hud-level-name');
+    if (hud && hudName) {
+        hud.classList.remove('hidden');
+        hudName.textContent = blueprintsData[levelKey].name;
+    }
+    
+    // Buat ghost meshes
+    const items = blueprintsData[levelKey].items;
+    items.forEach((item) => {
+        const geo = createBlueprintGeometry(item.shape);
+        
+        // Material blueprint: soft glowing neon blue wireframe
+        const mat = new THREE.MeshBasicMaterial({
+            color: 0x00ffff,
+            wireframe: true,
+            transparent: true,
+            opacity: 0.45
+        });
+        
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.scale.set(item.scale, item.scale, item.scale);
+        mesh.position.set(item.pos.x, item.pos.y, item.pos.z);
+        
+        // Beberapa rotasi geometri default agar sesuai visual
+        if (item.shape === 'tri' || item.shape === 'pyramid') {
+            mesh.rotation.y = Math.PI / 4;
+        }
+        
+        scene.add(mesh);
+        
+        blueprintObjects.push({
+            mesh: mesh,
+            shape: item.shape,
+            pos: item.pos,
+            scale: item.scale,
+            color: item.color,
+            matched: false
+        });
+    });
+    
+    updateStatus('Tantangan dimulai. Susun balok sesuai hologram biru!');
+}
+
+function clearLevel() {
+    gameWinChecked = false;
+    
+    // Hapus ghost meshes dari scene
+    blueprintObjects.forEach(obj => {
+        scene.remove(obj.mesh);
+        try { obj.mesh.geometry.dispose(); } catch (e) {}
+        try { obj.mesh.material.dispose(); } catch (e) {}
+    });
+    blueprintObjects = [];
+    
+    // Hapus semua block pemain saat ini
+    const blocksCopy = [...blocks];
+    blocksCopy.forEach(b => removeBlockFromSimulation(b));
+    
+    // Sembunyikan sukses modal jika terbuka
+    const successModal = document.getElementById('success-modal');
+    if (successModal) successModal.classList.add('hidden');
+}
+
+function exitLevel() {
+    clearLevel();
+    isGameMode = false;
+    currentGameLevel = null;
+    
+    const hud = document.getElementById('game-hud');
+    if (hud) hud.classList.add('hidden');
+    
+    const selector = document.getElementById('level-selector-overlay');
+    if (selector) selector.classList.add('hidden');
+    
+    showScreen('home');
+}
+
+function checkGameWinCondition() {
+    if (!isGameMode || blueprintObjects.length === 0 || gameWinChecked) return;
+    
+    // Reset status match blueprint
+    blueprintObjects.forEach(bp => {
+        bp.matched = false;
+        bp.mesh.material.color.setHex(0x00ffff); // Reset ke biru neon
+        bp.mesh.material.opacity = 0.45;
+    });
+    
+    let allMatched = true;
+    
+    // Cari balok pemain yang cocok untuk setiap item blueprint
+    blueprintObjects.forEach(bp => {
+        let foundMatch = false;
+        
+        for (let i = 0; i < blocks.length; i++) {
+            const block = blocks[i];
+            
+            // Cek tipe bentuk
+            if (block.shape !== bp.shape) continue;
+            
+            // Hitung jarak 3D
+            const dist = block.mesh.position.distanceTo(new THREE.Vector3(bp.pos.x, bp.pos.y, bp.pos.z));
+            
+            // Jarak < 0.65 unit dianggap pas
+            if (dist < 0.65) {
+                foundMatch = true;
+                break;
+            }
+        }
+        
+        if (foundMatch) {
+            bp.matched = true;
+            bp.mesh.material.color.setHex(0x22c55e); // Hijau sukses
+            bp.mesh.material.opacity = 0.65;
+        } else {
+            allMatched = false;
+        }
+    });
+    
+    if (allMatched && blocks.length > 0) {
+        gameWinChecked = true;
+        // Tampilkan modal kemenangan
+        const successModal = document.getElementById('success-modal');
+        if (successModal) {
+            successModal.classList.remove('hidden');
+            updateStatus('Selamat! Anda berhasil menyusun menara dengan sempurna!');
+        }
+    }
+}
+
+// --- INTEGRASI NAVIGASI HOME & LEVEL SELECTOR ---
+const btnPlaySusun = document.querySelector('.big-btn.green');
+const btnFreeBuild = document.querySelector('.big-btn.yellow');
+const levelSelectorOverlay = document.getElementById('level-selector-overlay');
+const btnCloseLevelSelector = document.getElementById('btn-close-level-selector');
+
+if (btnFreeBuild) {
+    btnFreeBuild.addEventListener('click', () => {
+        isGameMode = false;
+        clearLevel();
+        document.getElementById('game-hud').classList.add('hidden');
+        showScreen('builder');
+        updateStatus('Mode Bebas. Silakan bangun sesuka hati Anda.');
+    });
+}
+
+if (btnPlaySusun) {
+    btnPlaySusun.addEventListener('click', () => {
+        showScreen('builder');
+        if (levelSelectorOverlay) {
+            levelSelectorOverlay.classList.remove('hidden');
+        }
+    });
+}
+
+if (btnCloseLevelSelector) {
+    btnCloseLevelSelector.addEventListener('click', () => {
+        if (levelSelectorOverlay) {
+            levelSelectorOverlay.classList.add('hidden');
+        }
+        showScreen('home');
+    });
+}
+
+// Event listener untuk tombol-tombol level
+document.querySelectorAll('.lvl-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+        const levelKey = btn.dataset.level;
+        if (!levelKey) return;
+        
+        if (levelSelectorOverlay) {
+            levelSelectorOverlay.classList.add('hidden');
+        }
+        startLevel(levelKey);
+    });
+});
+
+// Event listener HUD & Win Modal
+const btnResetLevel = document.getElementById('btn-reset-level');
+const btnExitLevel = document.getElementById('btn-exit-level');
+const btnSuccessRetry = document.getElementById('btn-success-retry');
+const btnSuccessLevels = document.getElementById('btn-success-levels');
+
+if (btnResetLevel) {
+    btnResetLevel.addEventListener('click', () => {
+        if (currentGameLevel) startLevel(currentGameLevel);
+    });
+}
+
+if (btnExitLevel) {
+    btnExitLevel.addEventListener('click', () => {
+        exitLevel();
+    });
+}
+
+if (btnSuccessRetry) {
+    btnSuccessRetry.addEventListener('click', () => {
+        document.getElementById('success-modal').classList.add('hidden');
+        if (currentGameLevel) startLevel(currentGameLevel);
+    });
+}
+
+if (btnSuccessLevels) {
+    btnSuccessLevels.addEventListener('click', () => {
+        document.getElementById('success-modal').classList.add('hidden');
+        clearLevel();
+        if (levelSelectorOverlay) {
+            levelSelectorOverlay.classList.remove('hidden');
+        }
     });
 }
 

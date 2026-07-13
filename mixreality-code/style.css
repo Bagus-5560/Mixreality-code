@@ -364,6 +364,168 @@ body {
     background: #f0f0f0;
 }
 
+/* Level Overlay and Modals */
+.level-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(15, 23, 42, 0.8);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 2000;
+    transition: opacity 0.3s ease;
+}
+.level-overlay.hidden {
+    display: none !important;
+}
+.level-card {
+    background: rgba(255, 255, 255, 0.95);
+    border-radius: 24px;
+    padding: 30px;
+    max-width: 400px;
+    width: 90%;
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+    text-align: center;
+    border: 1px solid rgba(255, 255, 255, 0.4);
+    transform: scale(0.9);
+    animation: popIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+}
+@keyframes popIn {
+    to { transform: scale(1); }
+}
+.level-card h2 {
+    font-size: 24px;
+    margin-bottom: 12px;
+    color: #1e293b;
+    font-weight: 800;
+}
+.level-card p {
+    font-size: 14px;
+    color: #64748b;
+    margin-bottom: 24px;
+}
+.level-buttons {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-bottom: 20px;
+}
+.lvl-btn {
+    padding: 14px 20px;
+    border-radius: 14px;
+    border: none;
+    font-size: 15px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    text-align: left;
+    display: flex;
+    align-items: center;
+}
+.lvl-btn.easy {
+    background: #f0fdf4;
+    color: #166534;
+    border: 1.5px solid #bbf7d0;
+}
+.lvl-btn.easy:hover { background: #dcfce7; transform: translateY(-2px); }
+.lvl-btn.medium {
+    background: #fefbeb;
+    color: #854d0e;
+    border: 1.5px solid #fef08a;
+}
+.lvl-btn.medium:hover { background: #fef9c3; transform: translateY(-2px); }
+.lvl-btn.hard {
+    background: #fef2f2;
+    color: #991b1b;
+    border: 1.5px solid #fecaca;
+}
+.lvl-btn.hard:hover { background: #fee2e2; transform: translateY(-2px); }
+
+.lvl-btn-back {
+    background: #e2e8f0;
+    color: #475569;
+    border: none;
+    padding: 12px 24px;
+    border-radius: 12px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    width: 100%;
+}
+.lvl-btn-back:hover { background: #cbd5e1; }
+
+/* Success Card customization */
+.success-card {
+    background: linear-gradient(135deg, #ffffff 0%, #f0fdf4 100%);
+    border: 2px solid #4ade80;
+}
+.success-card h2 {
+    color: #15803d;
+}
+
+/* HUD styles */
+.game-hud {
+    position: absolute;
+    top: 20px;
+    left: 100px; /* Di sebelah kanan vertical carousel */
+    background: rgba(255, 255, 255, 0.95);
+    backdrop-filter: blur(8px);
+    border: 1.5px solid rgba(255, 255, 255, 0.6);
+    border-radius: 16px;
+    padding: 12px 18px;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+    z-index: 100;
+    font-family: system-ui, sans-serif;
+    max-width: 250px;
+}
+.game-hud.hidden {
+    display: none !important;
+}
+.hud-title {
+    font-size: 14px;
+    font-weight: 800;
+    color: #1e293b;
+    margin-bottom: 4px;
+}
+.hud-title span {
+    color: #2b9cff;
+}
+.hud-status {
+    font-size: 11px;
+    color: #64748b;
+    margin-bottom: 10px;
+}
+.hud-buttons {
+    display: flex;
+    gap: 8px;
+}
+.hud-btn {
+    flex: 1;
+    padding: 6px 10px;
+    font-size: 11px;
+    font-weight: 700;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+.hud-btn.reset {
+    background: #f1f5f9;
+    color: #475569;
+}
+.hud-btn.reset:hover { background: #e2e8f0; }
+.hud-btn.exit {
+    background: #fee2e2;
+    color: #991b1b;
+}
+.hud-btn.exit:hover { background: #fecaca; }
+
 /* small responsive tweaks */
 @media (max-width:480px) {
     .avatar { width:68px; height:68px; font-size:32px }
