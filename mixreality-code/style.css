@@ -105,7 +105,7 @@ body {
 
 /* Builder/AR overlays */
 #webcam { position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; object-fit: cover; z-index: 1; transform: scaleX(-1); }
-#tracking_canvas { position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 2; pointer-events: none; transform: scaleX(-1); }
+#tracking_canvas { position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 3000; pointer-events: none; transform: scaleX(-1); }
 #output_canvas { position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 3; pointer-events: none; }
 
 #btn-tracking { position: absolute; top: 18px; right: 20px; z-index: 20; padding: 12px 18px; background: #FFD24D; border-radius: 12px; border:none; font-weight:700; box-shadow:0 6px 12px rgba(0,0,0,0.18); }
@@ -371,9 +371,9 @@ body {
     left: 0;
     width: 100%;
     height: 100%;
-    background: rgba(15, 23, 42, 0.8);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
+    background: rgba(15, 23, 42, 0.45); /* Lebih transparan */
+    backdrop-filter: blur(6px); /* Mengurangi blur agar adegan 3D di belakang tetap terlihat */
+    -webkit-backdrop-filter: blur(6px);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -462,11 +462,19 @@ body {
 
 /* Success Card customization */
 .success-card {
-    background: linear-gradient(135deg, #ffffff 0%, #f0fdf4 100%);
-    border: 2px solid #4ade80;
+    background: rgba(255, 255, 255, 0.35) !important; /* Transparan */
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 2px solid rgba(74, 222, 128, 0.6) !important;
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
 }
 .success-card h2 {
-    color: #15803d;
+    color: #15803d !important;
+    text-shadow: 0 1px 2px rgba(255, 255, 255, 0.8);
+}
+.success-card p {
+    color: #0f172a !important;
+    font-weight: 700;
 }
 
 /* HUD styles */
@@ -526,8 +534,176 @@ body {
 }
 .hud-btn.exit:hover { background: #fecaca; }
 
-/* small responsive tweaks */
-@media (max-width:480px) {
-    .avatar { width:68px; height:68px; font-size:32px }
-    .big-btn { padding:14px 18px; border-radius:22px }
+/* Komprehensif Mobile Responsiveness (UI & UX) */
+@media (max-width: 768px) {
+    /* Home Screen Tweaks */
+    .avatar {
+        width: 68px;
+        height: 68px;
+        font-size: 32px;
+    }
+    .greeting h2 {
+        font-size: 18px;
+    }
+    .greeting p {
+        font-size: 12px;
+    }
+    .home-main {
+        padding: 15px;
+        gap: 12px;
+    }
+    .big-btn {
+        padding: 14px 18px;
+        font-size: 16px;
+        border-radius: 20px;
+    }
+    .big-btn .sub {
+        font-size: 11px;
+    }
+
+    /* Status Text */
+    #status {
+        font-size: 11px !important;
+        top: 12px !important;
+        left: 12px !important;
+        padding: 6px 12px !important;
+    }
+
+    /* Builder Screen Layout & Button Sizes */
+    .tc-btn {
+        width: 44px;
+        height: 44px;
+        font-size: 16px;
+        border-radius: 10px;
+    }
+    .top-center-controls {
+        top: 15px;
+        gap: 8px;
+    }
+
+    .rc-btn {
+        width: 44px;
+        height: 44px;
+        font-size: 16px;
+        border-radius: 10px;
+    }
+    .right-controls {
+        right: 10px;
+        top: 80px;
+        gap: 8px;
+    }
+
+    /* Vertical Carousel Left Panel */
+    .bottom-fab {
+        left: 10px;
+        gap: 8px;
+        max-height: calc(100vh - 160px);
+    }
+    .scroll-btn {
+        width: 48px;
+        height: 48px;
+        font-size: 18px;
+        border-radius: 10px;
+    }
+    .carousel {
+        padding: 8px 6px;
+        border-radius: 12px;
+        gap: 6px;
+    }
+    .carousel .block {
+        width: 48px;
+        height: 58px;
+        border-radius: 10px;
+        font-size: 9px;
+        padding: 4px 2px;
+    }
+    .carousel .block svg {
+        width: 20px;
+        height: 20px;
+    }
+    .carousel .block span {
+        font-size: 8px;
+    }
+    .camera-btn {
+        width: 60px;
+        height: 60px;
+        font-size: 20px;
+        border-radius: 50%;
+    }
+
+    /* Color Palette */
+    .color-palette {
+        right: 52px;
+        padding: 6px 10px;
+        gap: 6px;
+    }
+    .color-dot {
+        width: 26px;
+        height: 26px;
+    }
+
+    /* Game HUD Centered for Mobile to Prevent Collisions */
+    .game-hud {
+        position: absolute;
+        top: 75px;
+        left: 50%;
+        transform: translateX(-50%);
+        max-width: 280px;
+        width: calc(100% - 130px); /* Meninggalkan ruang untuk tombol kiri dan kanan */
+        padding: 10px 14px;
+        border-radius: 12px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    }
+    .hud-title {
+        font-size: 12px;
+    }
+    .hud-status {
+        font-size: 10px;
+        margin-bottom: 8px;
+    }
+    .hud-btn {
+        padding: 5px 8px;
+        font-size: 10px;
+    }
+
+    /* Bottom Navigation Bar */
+    .home-bottomnav, .builder-bottomnav {
+        bottom: 8px;
+        padding: 4px 20px;
+    }
+    .nav-item {
+        width: 48px;
+        height: 48px;
+        font-size: 18px;
+        border-radius: 10px;
+    }
+
+    /* Overlays (Level selector and victory modal) */
+    .level-card {
+        padding: 20px;
+        width: 85%;
+        border-radius: 20px;
+    }
+    .level-card h2 {
+        font-size: 20px;
+        margin-bottom: 8px;
+    }
+    .level-card p {
+        font-size: 12px;
+        margin-bottom: 16px;
+    }
+    .level-buttons {
+        gap: 8px;
+        margin-bottom: 15px;
+    }
+    .lvl-btn {
+        padding: 10px 16px;
+        font-size: 13px;
+        border-radius: 10px;
+    }
+    .lvl-btn-back {
+        padding: 10px 20px;
+        font-size: 13px;
+        border-radius: 10px;
+    }
 }

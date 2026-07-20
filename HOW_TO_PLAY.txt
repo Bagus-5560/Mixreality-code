@@ -1,0 +1,4 @@
+- Buka Dengan VSCODE
+- Install Live Preview/Live Server
+- Klik kanan index.html pilih Open With live Server
+- Aktifkan Kamera

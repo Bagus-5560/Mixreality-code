@@ -9,11 +9,22 @@ camera.position.z = 10;
 const renderer = new THREE.WebGLRenderer({ canvas: canvas, alpha: true, antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setPixelRatio(window.devicePixelRatio);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
-const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+const ambientLight = new THREE.AmbientLight(0xffffff, 0.65);
 scene.add(ambientLight);
-const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
-dirLight.position.set(5, 10, 5);
+const dirLight = new THREE.DirectionalLight(0xffffff, 0.85);
+dirLight.position.set(5, 12, 5);
+dirLight.castShadow = true;
+dirLight.shadow.mapSize.width = 1024;
+dirLight.shadow.mapSize.height = 1024;
+dirLight.shadow.camera.near = 0.5;
+dirLight.shadow.camera.far = 25;
+dirLight.shadow.camera.left = -10;
+dirLight.shadow.camera.right = 10;
+dirLight.shadow.camera.top = 10;
+dirLight.shadow.camera.bottom = -10;
 scene.add(dirLight);
 
 // Fungsi untuk membuat tekstur lantai kotak-kotak (checkered/grid floor)
@@ -47,7 +58,7 @@ function createCheckeredTexture() {
     return texture;
 }
 
-// Lantai Virtual (Batas Bawah)
+// Lantai Virtual (Batas Bawah Studio)
 const floorY = -3;
 const floorGeometry = new THREE.PlaneGeometry(20, 10);
 const floorTexture = createCheckeredTexture();
@@ -61,6 +72,29 @@ const floor = new THREE.Mesh(floorGeometry, floorMaterial);
 floor.rotation.x = Math.PI / -2;
 floor.position.y = floorY;
 scene.add(floor);
+
+// Lantai Bayangan Realistis Mode AR Dunia Nyata (ShadowMaterial)
+const arShadowMaterial = new THREE.ShadowMaterial({ opacity: 0.35 });
+const arShadowFloor = new THREE.Mesh(floorGeometry, arShadowMaterial);
+arShadowFloor.rotation.x = Math.PI / -2;
+arShadowFloor.position.y = floorY;
+arShadowFloor.receiveShadow = true;
+arShadowFloor.visible = false; // Aktif saat kamera belakang (AR Mode)
+scene.add(arShadowFloor);
+
+// Reticle Penanda Deteksi Permukaan Dunia Nyata (AR Placement Ring)
+const reticleGeo = new THREE.RingGeometry(0.35, 0.48, 32);
+const reticleMat = new THREE.MeshBasicMaterial({
+    color: 0x00ffff,
+    side: THREE.DoubleSide,
+    transparent: true,
+    opacity: 0.85
+});
+const arReticle = new THREE.Mesh(reticleGeo, reticleMat);
+arReticle.rotation.x = Math.PI / -2;
+arReticle.position.set(0, floorY + 0.02, 0);
+arReticle.visible = false; // Aktif saat Kamera Belakang (AR Mode)
+scene.add(arReticle);
 
 // ==========================================
 // 1B. SETUP PHYSICS (CANNON.JS)
@@ -113,6 +147,7 @@ let blocks = [];
 let deleteMode = false;
 let grabbedBlock = null;
 let activePaintColor = null;
+let currentFacingMode = 'user'; // 'user' (front/selfie) or 'environment' (rear/back)
 
 // Game Mode State Variables (Susun Balok)
 let isGameMode = false;
@@ -326,6 +361,8 @@ function spawnBlock(shape, colorHex, x = 0, y = 0, z = 0) {
     }
     const mat = new THREE.MeshPhongMaterial({ color: colorHex || 0x00ff00 });
     const mesh = new THREE.Mesh(geo, mat);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
     mesh.position.set(x, y, z);
     // Set ukuran awal menjadi 50% (skala 0.5)
     mesh.scale.set(0.5, 0.5, 0.5);
@@ -444,8 +481,8 @@ const cameraBtn = document.getElementById('camera-btn');
 // 3. FUNGSI BANTUAN MATEMATIKA & KAMERA
 // ==========================================
 function mapTo3DSpace(x, y) {
-    const mirroredX = 1 - x;
-    return { x: (mirroredX - 0.5) * 14, y: -(y - 0.5) * 10 };
+    const targetX = (currentFacingMode === 'user') ? (1 - x) : x;
+    return { x: (targetX - 0.5) * 14, y: -(y - 0.5) * 10 };
 }
 
 function getDistance(p1, p2) {
@@ -473,7 +510,8 @@ function startCamera() {
                 }
             },
             width: 640,
-            height: 480
+            height: 480,
+            facingMode: currentFacingMode
         });
     }
 
@@ -518,6 +556,51 @@ function toggleCamera() {
     if (cameraActive) {
         stopCamera();
     } else {
+        startCamera();
+    }
+}
+
+// Fungsi Memutar/Flip Kamera (Depan <-> Belakang / Mode AR Dunia Nyata)
+function flipCamera() {
+    currentFacingMode = (currentFacingMode === 'user') ? 'environment' : 'user';
+    
+    // Terapkan efek cermin ke video dan tracking canvas jika kamera depan, dan hilangkan jika kamera belakang
+    if (currentFacingMode === 'user') {
+        videoElement.style.transform = 'scaleX(-1)';
+        trackingCanvas.style.transform = 'scaleX(-1)';
+        floor.visible = true; // Tampilkan kembali lantai ubin studio
+        arShadowFloor.visible = false;
+        if (arReticle) arReticle.visible = false;
+        
+        // Reset posisi kamera ke pandangan studio standar
+        camera.position.set(0, 0, 10);
+        camera.lookAt(0, 0, 0);
+        
+        updateStatus('Mode Kamera Depan (Selfie Studio).');
+    } else {
+        videoElement.style.transform = 'none';
+        trackingCanvas.style.transform = 'none';
+        floor.visible = false; // Sembunyikan ubin buatan agar lantai dunia nyata dari kamera terlihat 100%
+        arShadowFloor.visible = true; // Aktifkan lantai bayangan realistis di atas video dunia nyata
+        if (arReticle) arReticle.visible = true; // Aktifkan penanda deteksi dataran AR
+        
+        // Posisikan kamera sudut AR untuk melihat permukaan tanah/meja
+        camera.position.set(0, 1, 9);
+        camera.lookAt(0, floorY + 1, 0);
+        
+        updateStatus('Mode AR Aktif! Permukaan terdeteksi 🎯. Geser layar untuk melihat 360° sekeliling objek!');
+    }
+    
+    // Jika kamera sedang aktif, hentikan & jalankan kembali dengan facingMode baru
+    if (cameraActive) {
+        if (cameraUtils) {
+            try { cameraUtils.stop(); } catch (e) { }
+            cameraUtils = null;
+        }
+        if (videoElement.srcObject) {
+            videoElement.srcObject.getTracks().forEach(track => track.stop());
+            videoElement.srcObject = null;
+        }
         startCamera();
     }
 }
@@ -939,6 +1022,12 @@ function animate() {
     // Majukan simulasi fisika Cannon.js
     world.step(1 / 60);
 
+    // Animasi denyut & rotasi reticle penanda dataran AR
+    if (arReticle && arReticle.visible) {
+        arReticle.material.opacity = 0.65 + Math.sin(Date.now() * 0.006) * 0.25;
+        arReticle.rotation.z += 0.01;
+    }
+
     // Update floating size info
     updateScaleBadge();
 
@@ -1125,6 +1214,16 @@ if (cameraBtn) cameraBtn.addEventListener('click', () => {
     cameraBtn.style.transform = 'scale(0.96)';
     setTimeout(() => cameraBtn.style.transform = '', 150);
 });
+
+// Tombol Flip Kamera (Depan / Belakang)
+const btnFlipCamera = document.getElementById('btn-flip-camera');
+if (btnFlipCamera) {
+    btnFlipCamera.addEventListener('click', () => {
+        flipCamera();
+        btnFlipCamera.style.transform = 'scale(0.9)';
+        setTimeout(() => btnFlipCamera.style.transform = '', 150);
+    });
+}
 
 // Tombol Hapus (Delete Mode)
 const btnDelete = document.getElementById('btn-delete');
@@ -1414,8 +1513,8 @@ document.querySelectorAll('.lvl-btn').forEach(btn => {
 // Event listener HUD & Win Modal
 const btnResetLevel = document.getElementById('btn-reset-level');
 const btnExitLevel = document.getElementById('btn-exit-level');
-const btnSuccessRetry = document.getElementById('btn-success-retry');
 const btnSuccessLevels = document.getElementById('btn-success-levels');
+const btnSuccessHome = document.getElementById('btn-success-home');
 
 if (btnResetLevel) {
     btnResetLevel.addEventListener('click', () => {
@@ -1429,20 +1528,22 @@ if (btnExitLevel) {
     });
 }
 
-if (btnSuccessRetry) {
-    btnSuccessRetry.addEventListener('click', () => {
-        document.getElementById('success-modal').classList.add('hidden');
-        if (currentGameLevel) startLevel(currentGameLevel);
-    });
-}
-
 if (btnSuccessLevels) {
     btnSuccessLevels.addEventListener('click', () => {
-        document.getElementById('success-modal').classList.add('hidden');
+        const successModal = document.getElementById('success-modal');
+        if (successModal) successModal.classList.add('hidden');
         clearLevel();
         if (levelSelectorOverlay) {
             levelSelectorOverlay.classList.remove('hidden');
         }
+    });
+}
+
+if (btnSuccessHome) {
+    btnSuccessHome.addEventListener('click', () => {
+        const successModal = document.getElementById('success-modal');
+        if (successModal) successModal.classList.add('hidden');
+        exitLevel();
     });
 }
 
@@ -1453,3 +1554,64 @@ window.addEventListener('resize', () => {
     trackingCanvas.width = window.innerWidth;
     trackingCanvas.height = window.innerHeight;
 });
+
+// ==========================================
+// 6. EKSPLORASI KAMERA 360° MODE AR DUNIA NYATA
+// ==========================================
+let isOrbitingAR = false;
+let prevTouchX = 0;
+let prevTouchY = 0;
+
+// Drag / Sentuh layar untuk memutar kamera 360° mengelilingi objek 3D di dunia nyata
+window.addEventListener('touchstart', (e) => {
+    if (currentFacingMode === 'environment' && e.touches.length === 1) {
+        const target = e.target;
+        if (!target.closest('button') && !target.closest('.right-controls') && !target.closest('.bottom-fab') && !target.closest('.level-overlay')) {
+            isOrbitingAR = true;
+            prevTouchX = e.touches[0].clientX;
+            prevTouchY = e.touches[0].clientY;
+        }
+    }
+});
+
+window.addEventListener('touchmove', (e) => {
+    if (isOrbitingAR && currentFacingMode === 'environment' && e.touches.length === 1) {
+        const deltaX = e.touches[0].clientX - prevTouchX;
+        const deltaY = e.touches[0].clientY - prevTouchY;
+        prevTouchX = e.touches[0].clientX;
+        prevTouchY = e.touches[0].clientY;
+
+        // Hitung vektor jarak & sudut kamera mengelilingi titik pusat dunia nyata (0, floorY + 1, 0)
+        const center = new THREE.Vector3(0, floorY + 1, 0);
+        const offset = camera.position.clone().sub(center);
+        const radius = offset.length();
+
+        let theta = Math.atan2(offset.x, offset.z);
+        let phi = Math.acos(Math.max(-1, Math.min(1, offset.y / radius)));
+
+        theta -= deltaX * 0.008;
+        phi = Math.max(0.1, Math.min(Math.PI / 2 - 0.05, phi - deltaY * 0.008));
+
+        camera.position.x = center.x + radius * Math.sin(phi) * Math.sin(theta);
+        camera.position.y = center.y + radius * Math.cos(phi);
+        camera.position.z = center.z + radius * Math.sin(phi) * Math.cos(theta);
+        camera.lookAt(center);
+    }
+});
+
+window.addEventListener('touchend', () => { isOrbitingAR = false; });
+
+// Dukungan Sensor Gyroscope HP untuk gerakan kamera mengikuti arah HP pengguna
+if (window.DeviceOrientationEvent) {
+    window.addEventListener('deviceorientation', (e) => {
+        if (currentFacingMode === 'environment' && e.beta !== null && e.gamma !== null && !isOrbitingAR) {
+            // Gerakkan posisi kamera secara halus sesuai kemiringan HP
+            const pitch = THREE.MathUtils.degToRad(e.beta - 45); // Pitch kemiringan HP
+            const roll = THREE.MathUtils.degToRad(e.gamma);      // Roll kemiringan HP
+            
+            camera.position.x = roll * 2;
+            camera.position.y = floorY + 3.5 + Math.sin(pitch) * 2;
+            camera.lookAt(0, floorY + 1, 0);
+        }
+    }, true);
+}
