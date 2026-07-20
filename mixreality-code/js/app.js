@@ -692,32 +692,8 @@ hands.onResults((results) => {
         const midY1 = (hand1[4].y + hand1[8].y) / 2;
         const pos3D = mapTo3DSpace(midX1, midY1);
 
-        // Visual feedback kursor pointer tangan di layar
-        if (showTracking) {
-            // Karena canvas memiliki CSS transform: scaleX(-1) pada kamera depan,
-            // koordinat mentah MediaPipe (midX1) secara otomatis di-cermin oleh CSS!
-            const rawCursorX = (currentFacingMode === 'user' ? midX1 : (1 - midX1)) * trackingCanvas.width;
-            const cursorY = midY1 * trackingCanvas.height;
-
-            trackingCtx.beginPath();
-            trackingCtx.arc(rawCursorX, cursorY, isStillHolding ? 16 : 10, 0, Math.PI * 2);
-            trackingCtx.fillStyle = isStillHolding ? 'rgba(255, 215, 0, 0.9)' : 'rgba(0, 255, 255, 0.75)';
-            trackingCtx.fill();
-            trackingCtx.lineWidth = 3;
-            trackingCtx.strokeStyle = '#FFFFFF';
-            trackingCtx.stroke();
-
-            if (isStillHolding) {
-                trackingCtx.save();
-                trackingCtx.translate(rawCursorX, cursorY);
-                // Un-mirror teks jika canvas menggunakan CSS scaleX(-1) agar teks tidak terbalik
-                if (currentFacingMode === 'user') trackingCtx.scale(-1, 1);
-                trackingCtx.font = 'bold 13px sans-serif';
-                trackingCtx.fillStyle = '#FFFFFF';
-                trackingCtx.fillText('✊ PINCH', currentFacingMode === 'user' ? -60 : 20, 4);
-                trackingCtx.restore();
-            }
-        }
+        // Visual feedback penjejakan tangan pada kanvas tracking (hanya garis rangka hijau/merah sederhana)
+        // Indikator lingkaran kuning/cyan dan teks PINCH dihilangkan sesuai permintaan pengguna agar layar tetap bersih
 
         // --- PINCH TO CLICK OR HOLD HTML BUTTONS ---
         let clickedHTMLButton = false;
@@ -1653,8 +1629,12 @@ window.addEventListener('orientationchange', () => {
 // ==========================================
 let arAnchorOrientation = null;
 const AR_CAMERA_DISTANCE = 8.0;
-let gyroSmooth = { theta: 0, phi: Math.PI / 3 }; // Smoothed gyro values
+let gyroSmooth = { theta: 0, phi: Math.PI / 3 };
 let gyroPermissionRequested = false;
+
+// Translasi linear (pergerakan fisik geser HP ke kiri/kanan/atas/bawah)
+let arAnchorOffset = { x: 0, y: 0, z: 0 };
+let arVelocity = { x: 0, y: 0, z: 0 };
 
 function resetARWorldAnchor() {
     arAnchorOrientation = null;
@@ -1662,6 +1642,8 @@ function resetARWorldAnchor() {
     arOrbitTheta = 0;
     arOrbitPhi = Math.PI / 3;
     gyroActive = false;
+    arAnchorOffset = { x: 0, y: 0, z: 0 };
+    arVelocity = { x: 0, y: 0, z: 0 };
     camera.position.set(0, 1.5, AR_CAMERA_DISTANCE);
     camera.lookAt(0, floorY + 1, 0);
 }
@@ -1704,41 +1686,60 @@ if (window.DeviceOrientationEvent) {
 
         if (alpha === null || beta === null || gamma === null) return;
 
-        // Mark gyro as active on first valid data
         if (!gyroActive) {
             gyroActive = true;
-            updateStatus('Gyroscope aktif ✅ Miringkan/putar HP untuk melihat dari sudut berbeda.');
+            updateStatus('Mode AR Aktif 📍. Putar / geser HP untuk melihat objek dari berbagai sudut.');
         }
 
-        // Catat orientasi HP pertama kali saat AR diaktifkan sebagai titik acuan
         if (!arAnchorOrientation) {
             arAnchorOrientation = { alpha, beta, gamma };
         }
 
-        // Hitung delta rotasi relatif terhadap posisi awal
         let dAlpha = alpha - arAnchorOrientation.alpha;
-        // Handle wrap-around (0-360 boundary)
         if (dAlpha > 180) dAlpha -= 360;
         if (dAlpha < -180) dAlpha += 360;
         const dBeta = beta - arAnchorOrientation.beta;
 
-        // Convert to radians and apply to orbit angles
-        const targetTheta = THREE.MathUtils.degToRad(-dAlpha); // Negative: phone right → camera orbits right → objects appear to go left
+        const targetTheta = THREE.MathUtils.degToRad(-dAlpha);
         let targetPhi = (Math.PI / 3) + THREE.MathUtils.degToRad(dBeta) * 0.5;
         targetPhi = Math.max(0.15, Math.min(Math.PI / 2 - 0.05, targetPhi));
 
-        // Smooth interpolation
         arOrbitTheta += (targetTheta - arOrbitTheta) * 0.2;
         arOrbitPhi += (targetPhi - arOrbitPhi) * 0.2;
 
-        // Apply orbit
+        applyAROrbit();
+    }, true);
+}
+
+// Sensor Akselerometer (DeviceMotion) untuk kompensasi pergeseran/translasi HP fisik
+if (window.DeviceMotionEvent) {
+    window.addEventListener('devicemotion', (e) => {
+        if (currentFacingMode !== 'environment' || isOrbitingAR) return;
+        const acc = e.acceleration;
+        if (!acc || acc.x === null) return;
+
+        // Filter kebisingan akselerasi kecil
+        const ax = Math.abs(acc.x) > 0.18 ? -acc.x : 0;
+        const ay = Math.abs(acc.y) > 0.18 ? acc.y : 0;
+
+        // Redaman kecepatan tinggi (damping) agar tidak terjadi hanyut (drift) berlebihan
+        arVelocity.x = arVelocity.x * 0.78 + ax * 0.03;
+        arVelocity.y = arVelocity.y * 0.78 + ay * 0.03;
+
+        arAnchorOffset.x += arVelocity.x * 0.08;
+        arAnchorOffset.y += arVelocity.y * 0.08;
+
+        // Batasi batas pergeseran maksimum
+        arAnchorOffset.x = THREE.MathUtils.clamp(arAnchorOffset.x, -3, 3);
+        arAnchorOffset.y = THREE.MathUtils.clamp(arAnchorOffset.y, -2, 2);
+
         applyAROrbit();
     }, true);
 }
 
 // Central function to position camera in orbit around objects
 function applyAROrbit() {
-    const anchor = new THREE.Vector3(0, floorY + 1, 0);
+    const anchor = new THREE.Vector3(arAnchorOffset.x, floorY + 1 + arAnchorOffset.y, arAnchorOffset.z);
     camera.position.x = anchor.x + AR_CAMERA_DISTANCE * Math.sin(arOrbitPhi) * Math.sin(arOrbitTheta);
     camera.position.y = anchor.y + AR_CAMERA_DISTANCE * Math.cos(arOrbitPhi);
     camera.position.z = anchor.z + AR_CAMERA_DISTANCE * Math.sin(arOrbitPhi) * Math.cos(arOrbitTheta);
