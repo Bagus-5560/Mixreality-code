@@ -70,6 +70,53 @@
             </div>
             <button class="rc-btn like">👍</button>
             <button id="btn-delete" class="rc-btn delete">🗑️</button>
+            <button id="btn-floor" class="rc-btn floor-btn" title="Atur Posisi Lantai">📍</button>
+        </div>
+
+        <!-- Floor Position Indicator Badge -->
+        <div id="floor-badge" class="floor-badge hidden">
+            <div class="floor-badge-icon">📍</div>
+            <div class="floor-badge-text">
+                <div class="floor-badge-label">Lantai</div>
+                <div id="floor-badge-value" class="floor-badge-value">Y: -3.0</div>
+            </div>
+        </div>
+
+        <!-- Floor Slider Overlay -->
+        <div id="floor-slider-overlay" class="floor-slider-overlay hidden">
+            <div class="floor-slider-container">
+                <div class="floor-slider-header">
+                    <span class="floor-slider-title">📍 Atur Posisi Lantai</span>
+                    <button id="btn-close-floor-slider" class="floor-slider-close">✕</button>
+                </div>
+                <div class="floor-slider-body" style="display: flex; gap: 20px; justify-content: center;">
+                    <!-- Slider Tinggi (Y) -->
+                    <div style="display: flex; flex-direction: column; align-items: center; gap: 8px;">
+                        <span style="font-size: 10px; font-weight: 600; color: #94a3b8; text-transform: uppercase;">Tinggi</span>
+                        <input type="range" id="floor-slider" class="floor-slider" min="-8" max="5" step="0.1" value="-3" orient="vertical">
+                        <div id="floor-slider-value" class="floor-slider-value">-3.0</div>
+                    </div>
+                    <!-- Slider Kemiringan (Tilt) -->
+                    <div style="display: flex; flex-direction: column; align-items: center; gap: 8px;">
+                        <span style="font-size: 10px; font-weight: 600; color: #94a3b8; text-transform: uppercase;">Sudut</span>
+                        <input type="range" id="floor-tilt-slider" class="floor-slider" min="0" max="90" step="1" value="0" orient="vertical">
+                        <div id="floor-tilt-slider-value" class="floor-slider-value">0°</div>
+                    </div>
+                </div>
+                <div class="floor-slider-presets">
+                    <button class="floor-preset" data-floor-y="-3">🏠 Default</button>
+                    <button class="floor-preset" data-floor-y="-1">🪑 Kursi</button>
+                    <button class="floor-preset" data-floor-y="0">🪵 Meja</button>
+                    <button class="floor-preset" data-floor-y="2">📦 Rak</button>
+                </div>
+                <div class="floor-slider-footer">
+                    <label class="floor-auto-toggle">
+                        <input type="checkbox" id="floor-auto-tilt">
+                        <span class="floor-toggle-slider"></span>
+                        <span class="floor-toggle-label">Auto (Sensor Tilt)</span>
+                    </label>
+                </div>
+            </div>
         </div>
 
         <!-- Bottom floating camera + carousel -->

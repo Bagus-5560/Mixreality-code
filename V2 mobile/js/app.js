@@ -47,8 +47,8 @@ function createCheckeredTexture() {
     return texture;
 }
 
-// Lantai Virtual (Batas Bawah)
-const floorY = -3;
+// Lantai Virtual (Batas Bawah) — sekarang dinamis
+let floorY = -3;
 const floorGeometry = new THREE.PlaneGeometry(20, 10);
 const floorTexture = createCheckeredTexture();
 const floorMaterial = new THREE.MeshBasicMaterial({
@@ -107,6 +107,183 @@ const groundBody = new CANNON.Body({
 groundBody.quaternion.setFromAxisAngle(new CANNON.Vec3(1, 0, 0), -Math.PI / 2);
 groundBody.position.set(0, floorY, 0);
 world.addBody(groundBody);
+
+// ==========================================
+// 1C. SISTEM LANTAI ADAPTIF (DYNAMIC FLOOR)
+// ==========================================
+let floorAutoTilt = false; // Mode auto tilt (gyroscope)
+let targetFloorY = floorY; // Target posisi lantai (untuk smooth interpolation)
+let floorTiltDeg = 0; // Kemiringan lantai dalam derajat (0 = datar, 90 = vertikal)
+let targetFloorTiltDeg = floorTiltDeg;
+let lastTiltBeta = null; // Nilai beta terakhir dari gyroscope
+let floorSliderActive = false; // Apakah slider sedang aktif digunakan
+
+// Fungsi utama untuk mengupdate posisi lantai
+function updateFloorPosition(newY, newTiltDeg, smooth = true) {
+    if (newY !== null) {
+        newY = Math.max(-8, Math.min(newY, 5));
+        if (smooth) targetFloorY = newY;
+        else { targetFloorY = newY; floorY = newY; }
+    }
+    
+    if (newTiltDeg !== null) {
+        newTiltDeg = Math.max(0, Math.min(newTiltDeg, 90));
+        if (smooth) targetFloorTiltDeg = newTiltDeg;
+        else { targetFloorTiltDeg = newTiltDeg; floorTiltDeg = newTiltDeg; }
+    }
+    
+    if (!smooth) applyFloorPosition();
+}
+
+function applyFloorPosition() {
+    // 1. Update posisi visual lantai (Three.js mesh)
+    floor.position.y = floorY;
+    
+    // Rotasi default lantai adalah -90 derajat (-Math.PI/2). Kita tambah dengan kemiringan.
+    const tiltRad = THREE.MathUtils.degToRad(floorTiltDeg);
+    floor.rotation.x = -Math.PI / 2 + tiltRad;
+
+    // 2. Update posisi & rotasi fisika lantai (Cannon.js body)
+    groundBody.position.set(0, floorY, 0);
+    groundBody.quaternion.setFromAxisAngle(new CANNON.Vec3(1, 0, 0), -Math.PI / 2 + tiltRad);
+
+    // 3. Update Gravitasi agar tegak lurus dengan lantai (supaya balok tidak meluncur jatuh)
+    const baseGravity = 38;
+    // Arah gravitasi baru mengikuti normal lantai yang diputar
+    world.gravity.set(0, -baseGravity * Math.cos(tiltRad), -baseGravity * Math.sin(tiltRad));
+
+    // Bangunkan semua block yang sedang tidur agar bereaksi terhadap lantai/gravitasi baru
+    for (const block of blocks) {
+        if (block.body.sleepState === CANNON.Body.SLEEPING) {
+            block.body.wakeUp();
+        }
+    }
+
+    // Update UI indicator
+    updateFloorBadge();
+    updateFloorSliderUI();
+}
+
+// Smooth interpolation lantai di setiap frame
+function smoothFloorUpdate() {
+    let changed = false;
+    
+    if (Math.abs(floorY - targetFloorY) > 0.01) {
+        floorY += (targetFloorY - floorY) * 0.08;
+        changed = true;
+    } else if (floorY !== targetFloorY) {
+        floorY = targetFloorY;
+        changed = true;
+    }
+    
+    if (Math.abs(floorTiltDeg - targetFloorTiltDeg) > 0.1) {
+        floorTiltDeg += (targetFloorTiltDeg - floorTiltDeg) * 0.08;
+        changed = true;
+    } else if (floorTiltDeg !== targetFloorTiltDeg) {
+        floorTiltDeg = targetFloorTiltDeg;
+        changed = true;
+    }
+    
+    if (changed) {
+        applyFloorPosition();
+    }
+}
+
+// Update badge UI
+function updateFloorBadge() {
+    const badgeValue = document.getElementById('floor-badge-value');
+    if (badgeValue) {
+        badgeValue.textContent = 'Y: ' + floorY.toFixed(1);
+    }
+}
+
+// Update slider UI
+function updateFloorSliderUI() {
+    if (floorSliderActive) return; // Jangan update slider saat user sedang drag
+    const slider = document.getElementById('floor-slider');
+    const sliderValue = document.getElementById('floor-slider-value');
+    if (slider) slider.value = floorY.toFixed(1);
+    if (sliderValue) sliderValue.textContent = floorY.toFixed(1);
+    
+    const tiltSlider = document.getElementById('floor-tilt-slider');
+    const tiltSliderValue = document.getElementById('floor-tilt-slider-value');
+    if (tiltSlider) tiltSlider.value = floorTiltDeg.toFixed(0);
+    if (tiltSliderValue) tiltSliderValue.textContent = floorTiltDeg.toFixed(0) + '°';
+
+    // Update active preset
+    document.querySelectorAll('.floor-preset').forEach(btn => {
+        const presetY = parseFloat(btn.dataset.floorY);
+        if (Math.abs(floorY - presetY) < 0.2) {
+            btn.classList.add('active');
+        } else {
+            btn.classList.remove('active');
+        }
+    });
+}
+
+// ==========================================
+// GYROSCOPE / DEVICE ORIENTATION (Auto Tilt)
+// ==========================================
+function handleDeviceOrientation(event) {
+    if (!floorAutoTilt) return;
+
+    const beta = event.beta; // Kemiringan depan-belakang: 0 = datar, 90 = tegak
+    if (beta === null) return;
+
+    lastTiltBeta = beta;
+
+    // Mapping beta ke sudut tilt:
+    // beta ~90° (ponsel tegak, melihat lurus) → floorTilt = 0° (lantai normal)
+    // beta ~0° (ponsel datar, melihat meja) → floorTilt = 90° (lantai menghadap kamera)
+    
+    let mappedTilt = 90 - beta;
+    // Clamp antara 0 dan 90 derajat
+    mappedTilt = Math.max(0, Math.min(mappedTilt, 90));
+
+    // Biarkan posisi Y tetap (atau atur manual), tilt dikontrol gyroscope
+    updateFloorPosition(null, mappedTilt, true);
+}
+
+// Request permission untuk DeviceOrientation (diperlukan di iOS 13+)
+function requestOrientationPermission() {
+    if (typeof DeviceOrientationEvent !== 'undefined' &&
+        typeof DeviceOrientationEvent.requestPermission === 'function') {
+        // iOS 13+ memerlukan permission request
+        DeviceOrientationEvent.requestPermission()
+            .then(response => {
+                if (response === 'granted') {
+                    window.addEventListener('deviceorientation', handleDeviceOrientation, true);
+                    updateStatus('Sensor tilt aktif.');
+                } else {
+                    updateStatus('Izin sensor ditolak. Gunakan slider manual.', true);
+                    floorAutoTilt = false;
+                    const checkbox = document.getElementById('floor-auto-tilt');
+                    if (checkbox) checkbox.checked = false;
+                }
+            })
+            .catch(err => {
+                console.error('DeviceOrientation permission error:', err);
+                updateStatus('Sensor tilt tidak tersedia.', true);
+                floorAutoTilt = false;
+                const checkbox = document.getElementById('floor-auto-tilt');
+                if (checkbox) checkbox.checked = false;
+            });
+    } else if ('DeviceOrientationEvent' in window) {
+        // Android & browser lain yang tidak perlu permission
+        window.addEventListener('deviceorientation', handleDeviceOrientation, true);
+        updateStatus('Sensor tilt aktif.');
+    } else {
+        updateStatus('Sensor tilt tidak didukung di perangkat ini.', true);
+        floorAutoTilt = false;
+        const checkbox = document.getElementById('floor-auto-tilt');
+        if (checkbox) checkbox.checked = false;
+    }
+}
+
+function stopOrientationListener() {
+    window.removeEventListener('deviceorientation', handleDeviceOrientation, true);
+    updateStatus('Sensor tilt dinonaktifkan.');
+}
 
 // Array untuk menyimpan semua balok di scene
 let blocks = [];
@@ -744,7 +921,7 @@ hands.onResults((results) => {
                     if (!isScalingNow && isAnyPinching) {
                         // KINEMATIC agar pergerakan oleh tangan stabil dan presisi
                         grabbedBlock.body.type = CANNON.Body.KINEMATIC;
-                        grabbedBlock.body.position.set(pos3D.x, pos3D.y, 0);
+                        grabbedBlock.body.position.set(pos3D.x, pos3D.y, grabbedBlock.body.position.z);
                         grabbedBlock.body.velocity.set(0, 0, 0);
                         grabbedBlock.body.angularVelocity.set(0, 0, 0);
 
@@ -995,6 +1172,9 @@ function animate() {
     // Majukan simulasi fisika Cannon.js
     world.step(1 / 60);
 
+    // Smooth interpolasi lantai
+    smoothFloorUpdate();
+
     // Update floating size info
     updateScaleBadge();
 
@@ -1004,20 +1184,7 @@ function animate() {
     for (let i = blocks.length - 1; i >= 0; i--) {
         const block = blocks[i];
 
-        // Batasi pergerakan di sumbu Z agar tetap pada plane 2D (Z = 0)
-        block.body.position.z = 0;
-        block.body.velocity.z = 0;
-        block.body.angularVelocity.x = 0;
-        block.body.angularVelocity.y = 0;
-
-        // Kunci rotasi agar hanya berputar di sumbu Z (tidak berputar ke depan/belakang)
-        block.body.quaternion.x = 0;
-        block.body.quaternion.y = 0;
-        const len = Math.sqrt(block.body.quaternion.z * block.body.quaternion.z + block.body.quaternion.w * block.body.quaternion.w);
-        if (len > 0) {
-            block.body.quaternion.z /= len;
-            block.body.quaternion.w /= len;
-        }
+        // Hapus batasan 2D: Balok dibiarkan bergerak bebas secara 3D di semua sumbu.
 
         if (!block.isGrabbed) {
             block.mesh.position.copy(block.body.position);
@@ -1312,7 +1479,21 @@ function startLevel(levelKey) {
         
         const mesh = new THREE.Mesh(geo, mat);
         mesh.scale.set(item.scale, item.scale, item.scale);
-        mesh.position.set(item.pos.x, item.pos.y, item.pos.z);
+        
+        // Hitung ulang posisi 3D berdasarkan floorY dan floorTiltDeg (dinamis)
+        const baseOffset = item.pos.y - (-3); 
+        
+        const tiltRad = THREE.MathUtils.degToRad(floorTiltDeg);
+        
+        // Rotasi posisi (y, z) di sekitar sumbu X pada pivot (0, floorY, 0)
+        // Asumsi item.pos.z awalnya 0 untuk blueprints 2D
+        const dynamicY = floorY + baseOffset * Math.cos(tiltRad);
+        const dynamicZ = item.pos.z + baseOffset * Math.sin(tiltRad);
+        
+        mesh.position.set(item.pos.x, dynamicY, dynamicZ);
+        
+        // Rotasi mesh agar miring sejajar dengan lantai
+        mesh.rotation.x = tiltRad;
         
         // Beberapa rotasi geometri default agar sesuai visual
         if (item.shape === 'tri' || item.shape === 'pyramid') {
@@ -1324,7 +1505,7 @@ function startLevel(levelKey) {
         blueprintObjects.push({
             mesh: mesh,
             shape: item.shape,
-            pos: item.pos,
+            pos: { x: item.pos.x, y: dynamicY, z: dynamicZ }, // Simpan posisi dinamis untuk verifikasi kemenangan
             scale: item.scale,
             color: item.color,
             matched: false
@@ -1498,6 +1679,117 @@ if (btnSuccessLevels) {
         clearLevel();
         if (levelSelectorOverlay) {
             levelSelectorOverlay.classList.remove('hidden');
+        }
+    });
+}
+
+// ==========================================
+// FLOOR CONTROL EVENT LISTENERS
+// ==========================================
+const btnFloor = document.getElementById('btn-floor');
+const floorBadge = document.getElementById('floor-badge');
+const floorSliderOverlay = document.getElementById('floor-slider-overlay');
+const btnCloseFloorSlider = document.getElementById('btn-close-floor-slider');
+const floorSlider = document.getElementById('floor-slider');
+const floorAutoCheckbox = document.getElementById('floor-auto-tilt');
+const floorPresets = document.querySelectorAll('.floor-preset');
+
+if (btnFloor && floorSliderOverlay) {
+    btnFloor.addEventListener('click', () => {
+        floorSliderOverlay.classList.remove('hidden');
+        btnFloor.classList.add('active');
+        floorBadge.classList.remove('hidden');
+        updateFloorSliderUI();
+    });
+}
+
+if (btnCloseFloorSlider && floorSliderOverlay) {
+    btnCloseFloorSlider.addEventListener('click', () => {
+        floorSliderOverlay.classList.add('hidden');
+        btnFloor.classList.remove('active');
+        // Sembunyikan badge jika tidak ada blok (badge juga digunakan untuk scale info)
+        if (!isScaling) {
+            // floorBadge.classList.add('hidden'); // Optional: hide badge when closing slider
+        }
+    });
+}
+
+if (floorSlider) {
+    floorSlider.addEventListener('input', (e) => {
+        floorSliderActive = true;
+        const newY = parseFloat(e.target.value);
+        document.getElementById('floor-slider-value').textContent = newY.toFixed(1);
+        updateFloorPosition(newY, null, false); // false = apply instantly without lerp
+        
+        // Nonaktifkan auto-tilt saat user manual adjust
+        if (floorAutoTilt) {
+            floorAutoTilt = false;
+            if (floorAutoCheckbox) floorAutoCheckbox.checked = false;
+            stopOrientationListener();
+        }
+    });
+    
+    floorSlider.addEventListener('change', () => {
+        floorSliderActive = false;
+    });
+}
+
+const tiltSlider = document.getElementById('floor-tilt-slider');
+if (tiltSlider) {
+    tiltSlider.addEventListener('input', (e) => {
+        floorSliderActive = true;
+        const newTilt = parseFloat(e.target.value);
+        document.getElementById('floor-tilt-slider-value').textContent = newTilt.toFixed(0) + '°';
+        updateFloorPosition(null, newTilt, false);
+        
+        if (floorAutoTilt) {
+            floorAutoTilt = false;
+            if (floorAutoCheckbox) floorAutoCheckbox.checked = false;
+            stopOrientationListener();
+        }
+    });
+    
+    tiltSlider.addEventListener('change', () => {
+        floorSliderActive = false;
+    });
+}
+
+if (floorPresets) {
+    floorPresets.forEach(presetBtn => {
+        presetBtn.addEventListener('click', () => {
+            const presetY = parseFloat(presetBtn.dataset.floorY);
+            // Preset kembalikan kemiringan ke 0
+            const presetTilt = 0;
+            
+            // Animasi slider
+            if (floorSlider) {
+                floorSlider.value = presetY;
+                document.getElementById('floor-slider-value').textContent = presetY.toFixed(1);
+            }
+            if (tiltSlider) {
+                tiltSlider.value = presetTilt;
+                document.getElementById('floor-tilt-slider-value').textContent = presetTilt.toFixed(0) + '°';
+            }
+            
+            updateFloorPosition(presetY, presetTilt, true); // true = smooth transition
+            
+            // Nonaktifkan auto-tilt saat user pilih preset
+            if (floorAutoTilt) {
+                floorAutoTilt = false;
+                if (floorAutoCheckbox) floorAutoCheckbox.checked = false;
+                stopOrientationListener();
+            }
+        });
+    });
+}
+
+if (floorAutoCheckbox) {
+    floorAutoCheckbox.addEventListener('change', (e) => {
+        floorAutoTilt = e.target.checked;
+        if (floorAutoTilt) {
+            requestOrientationPermission();
+        } else {
+            stopOrientationListener();
         }
     });
 }
