@@ -461,6 +461,7 @@ let initialBalokScale = 1;
 let prevPinch = false;
 let selectionCooldown = 0;
 let isSelected = false;
+let pinchReleaseCounter = 0; // Grace period frame buffer to prevent accidental drops
 
 let showTracking = false;
 let cameraActive = false;
@@ -482,25 +483,29 @@ const cameraBtn = document.getElementById('camera-btn');
 // ==========================================
 function mapTo3DSpace(x, y) {
     const targetX = (currentFacingMode === 'user') ? (1 - x) : x;
-    const simple2D = { x: (targetX - 0.5) * 14, y: -(y - 0.5) * 10 };
-
-    // In AR mode (environment camera), use raycasting for proper 3D picking
+    
     if (currentFacingMode === 'environment') {
         const ndcX = targetX * 2 - 1;
         const ndcY = -(y * 2 - 1);
         const raycaster = new THREE.Raycaster();
         raycaster.setFromCamera(new THREE.Vector2(ndcX, ndcY), camera);
-        // Raycast to the z=0 plane where blocks live
-        const planeNormal = new THREE.Vector3(0, 0, 1);
-        const planePoint = new THREE.Vector3(0, 0, 0);
-        const plane = new THREE.Plane();
-        plane.setFromNormalAndCoplanarPoint(planeNormal, planePoint);
+        
+        // Raycast ke bidang horisontal meja (y = floorY + 0.5)
+        const floorPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -(floorY + 0.5));
         const intersection = new THREE.Vector3();
-        if (raycaster.ray.intersectPlane(plane, intersection)) {
-            return { x: intersection.x, y: intersection.y };
+        if (raycaster.ray.intersectPlane(floorPlane, intersection)) {
+            return { x: intersection.x, y: intersection.y, z: intersection.z };
         }
     }
-    return simple2D;
+    
+    const aspect = window.innerWidth / window.innerHeight;
+    const visibleHeight = 8.28;
+    const visibleWidth = visibleHeight * aspect;
+    return {
+        x: (targetX - 0.5) * visibleWidth,
+        y: -(y - 0.5) * visibleHeight,
+        z: 0
+    };
 }
 
 function getDistance(p1, p2) {
@@ -647,7 +652,7 @@ const hands = new Hands({ locateFile: (file) => `https://cdn.jsdelivr.net/npm/@m
 hands.setOptions({ maxNumHands: 2, modelComplexity: 1, minDetectionConfidence: 0.7, minTrackingConfidence: 0.7 });
 
 hands.onResults((results) => {
-    // 4A. MENGGAMBAR GARIS TRACKING
+    // 4A. MENGGAMBAR GARIS TRACKING & KURSOR HAND POINTER
     trackingCtx.clearRect(0, 0, trackingCanvas.width, trackingCanvas.height);
     if (showTracking && results.multiHandLandmarks) {
         for (const landmarks of results.multiHandLandmarks) {
@@ -663,16 +668,56 @@ hands.onResults((results) => {
         const hand2 = results.multiHandLandmarks.length > 1 ? results.multiHandLandmarks[1] : null;
 
         const pinchDist1 = getDistance(hand1[4], hand1[8]);
-        const isHand1Pinching = pinchDist1 < 0.06;
         const pinchDist2 = hand2 ? getDistance(hand2[4], hand2[8]) : 1;
-        const isHand2Pinching = hand2 ? pinchDist2 < 0.06 : false;
+
+        // Ambang batas cubitan: lebih longgar (0.13) saat sedang memegang balok agar tidak mudah terlepas
+        const pinchThreshold = grabbedBlock ? 0.13 : 0.085;
+        const isHand1Pinching = pinchDist1 < pinchThreshold;
+        const isHand2Pinching = hand2 ? pinchDist2 < pinchThreshold : false;
         const isAnyPinching = isHand1Pinching || isHand2Pinching;
 
-
+        // Penanganan buffer frame pelepasan (hysteresis) untuk mencegah balok terlepas tidak sengaja
+        if (grabbedBlock) {
+            if (isAnyPinching) {
+                pinchReleaseCounter = 0;
+            } else {
+                pinchReleaseCounter++;
+            }
+        } else {
+            pinchReleaseCounter = 0;
+        }
+        const isStillHolding = isAnyPinching || (grabbedBlock && pinchReleaseCounter < 8);
 
         const midX1 = (hand1[4].x + hand1[8].x) / 2;
         const midY1 = (hand1[4].y + hand1[8].y) / 2;
         const pos3D = mapTo3DSpace(midX1, midY1);
+
+        // Visual feedback kursor pointer tangan di layar
+        if (showTracking) {
+            // Karena canvas memiliki CSS transform: scaleX(-1) pada kamera depan,
+            // koordinat mentah MediaPipe (midX1) secara otomatis di-cermin oleh CSS!
+            const rawCursorX = (currentFacingMode === 'user' ? midX1 : (1 - midX1)) * trackingCanvas.width;
+            const cursorY = midY1 * trackingCanvas.height;
+
+            trackingCtx.beginPath();
+            trackingCtx.arc(rawCursorX, cursorY, isStillHolding ? 16 : 10, 0, Math.PI * 2);
+            trackingCtx.fillStyle = isStillHolding ? 'rgba(255, 215, 0, 0.9)' : 'rgba(0, 255, 255, 0.75)';
+            trackingCtx.fill();
+            trackingCtx.lineWidth = 3;
+            trackingCtx.strokeStyle = '#FFFFFF';
+            trackingCtx.stroke();
+
+            if (isStillHolding) {
+                trackingCtx.save();
+                trackingCtx.translate(rawCursorX, cursorY);
+                // Un-mirror teks jika canvas menggunakan CSS scaleX(-1) agar teks tidak terbalik
+                if (currentFacingMode === 'user') trackingCtx.scale(-1, 1);
+                trackingCtx.font = 'bold 13px sans-serif';
+                trackingCtx.fillStyle = '#FFFFFF';
+                trackingCtx.fillText('✊ PINCH', currentFacingMode === 'user' ? -60 : 20, 4);
+                trackingCtx.restore();
+            }
+        }
 
         // --- PINCH TO CLICK OR HOLD HTML BUTTONS ---
         let clickedHTMLButton = false;
@@ -685,13 +730,12 @@ hands.onResults((results) => {
                 const button = element.closest('button');
                 if (button) {
                     if (button.classList.contains('scroll-btn')) {
-                        // Continuous scrolling during pinch hold (no cooldown needed)
                         const direction = button.id === 'btn-scroll-up' ? -5 : 5;
                         carouselWrapper.scrollBy({ top: direction, behavior: 'auto' });
                         clickedHTMLButton = true;
                     } else if (btnCooldown === 0) {
                         button.click();
-                        btnCooldown = 30; // 0.5s cooldown for other buttons
+                        btnCooldown = 30;
                         clickedHTMLButton = true;
                     }
                 }
@@ -726,8 +770,6 @@ hands.onResults((results) => {
 
                     grabbedBlock.mesh.scale.set(newScale, newScale, newScale);
                     grabbedBlock.mesh.material.color.setHex(0xffff00);
-
-                    // Update bentuk fisika
                     updatePhysicsShape(grabbedBlock, newScale);
                 }
             }
@@ -747,17 +789,29 @@ hands.onResults((results) => {
                 isScaling = false;
             }
 
-            // Cari balok terdekat
+            // DETEKSI BALOK TERDEKAT DENGAN RAYCASTING 3D SEJATI
             let closestBlock = null;
-            let minDistance = Infinity;
-
-            for (const block of blocks) {
-                const hitArea = block.mesh.scale.x * 2;
-                const distToBlockX = Math.abs(pos3D.x - block.mesh.position.x);
-                const distToBlockY = Math.abs(pos3D.y - block.mesh.position.y);
-                if (distToBlockX < hitArea && distToBlockY < hitArea) {
-                    const dist = Math.sqrt(distToBlockX * distToBlockX + distToBlockY * distToBlockY);
-                    if (dist < minDistance) {
+            const targetX = (currentFacingMode === 'user') ? (1 - midX1) : midX1;
+            const ndcX = targetX * 2 - 1;
+            const ndcY = -(midY1 * 2 - 1);
+            const raycaster = new THREE.Raycaster();
+            raycaster.setFromCamera(new THREE.Vector2(ndcX, ndcY), camera);
+            
+            // Raycast langsung ke mesh 3D semua balok di scene
+            const intersects = raycaster.intersectObjects(blocks.map(b => b.mesh));
+            if (intersects.length > 0) {
+                const hitMesh = intersects[0].object;
+                closestBlock = blocks.find(b => b.mesh === hitMesh);
+            } else {
+                // Fallback: jarak 3D ke posisi target pos3D
+                let minDistance = Infinity;
+                for (const block of blocks) {
+                    const hitArea = block.mesh.scale.x * 2.5;
+                    const dx = pos3D.x - block.mesh.position.x;
+                    const dy = pos3D.y - block.mesh.position.y;
+                    const dz = (pos3D.z !== undefined ? pos3D.z : 0) - block.mesh.position.z;
+                    const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+                    if (dist < hitArea && dist < minDistance) {
                         minDistance = dist;
                         closestBlock = block;
                     }
@@ -776,7 +830,6 @@ hands.onResults((results) => {
                 // LOGIKA GRABBING & SELECTION (NORMAL MODE)
                 if (selectionCooldown > 0) selectionCooldown--;
                 const pinchStart = isHand1Pinching && !prevPinch;
-                // Hanya izinkan seleksi jika tidak ada warna aktif yang siap diwarnai
                 if (pinchStart && selectionCooldown === 0 && closestBlock && btnCooldown < 20 && activePaintColor === null) {
                     closestBlock.isSelected = !closestBlock.isSelected;
                     if (closestBlock.isSelected) {
@@ -786,31 +839,30 @@ hands.onResults((results) => {
                         closestBlock.mesh.material.emissive = new THREE.Color(0x000000);
                         closestBlock.mesh.material.emissiveIntensity = 0.0;
                     }
-                    selectionCooldown = 30; // small cooldown
+                    selectionCooldown = 30;
                     btnCooldown = 20;
                 }
                 prevPinch = isHand1Pinching;
 
                 if (grabbedBlock) {
-                    if (!isScalingNow && isAnyPinching) {
-                        // KINEMATIC agar pergerakan oleh tangan stabil dan presisi
+                    if (!isScalingNow && isStillHolding) {
                         grabbedBlock.body.type = CANNON.Body.KINEMATIC;
-                        grabbedBlock.body.position.set(pos3D.x, pos3D.y, 0);
+                        const targetZ = pos3D.z !== undefined ? pos3D.z : 0;
+                        grabbedBlock.body.position.set(pos3D.x, pos3D.y, targetZ);
                         grabbedBlock.body.velocity.set(0, 0, 0);
                         grabbedBlock.body.angularVelocity.set(0, 0, 0);
 
                         grabbedBlock.mesh.position.copy(grabbedBlock.body.position);
-                        grabbedBlock.body.quaternion.set(0, 0, 0, 1); // Tegak lurus saat digenggam
+                        grabbedBlock.body.quaternion.set(0, 0, 0, 1);
                         grabbedBlock.mesh.quaternion.copy(grabbedBlock.body.quaternion);
 
                         grabbedBlock.velocityY = 0;
-                        grabbedBlock.mesh.material.color.setHex(0xff0000); // Merah saat digenggam
-                    } else if (!isAnyPinching) {
-                        // Kembalikan ke DYNAMIC agar simulasi gravitasi berjalan normal kembali saat dilepas
+                        grabbedBlock.mesh.material.color.setHex(0xff0000);
+                    } else if (!isStillHolding) {
                         grabbedBlock.body.type = CANNON.Body.DYNAMIC;
                         grabbedBlock.body.velocity.set(0, 0, 0);
                         grabbedBlock.body.angularVelocity.set(0, 0, 0);
-                        grabbedBlock.body.wakeUp(); // Bangunkan bodi agar gravitasi langsung bekerja saat dilepas
+                        grabbedBlock.body.wakeUp();
 
                         // Cek apakah posisi berubah signifikan setelah digerakkan
                         if (grabbedBlock.startPosition) {
@@ -1062,19 +1114,21 @@ function animate() {
     for (let i = blocks.length - 1; i >= 0; i--) {
         const block = blocks[i];
 
-        // Batasi pergerakan di sumbu Z agar tetap pada plane 2D (Z = 0)
-        block.body.position.z = 0;
-        block.body.velocity.z = 0;
-        block.body.angularVelocity.x = 0;
-        block.body.angularVelocity.y = 0;
+        if (currentFacingMode === 'user') {
+            // Batasi pergerakan di sumbu Z agar tetap pada plane 2D (Z = 0) khusus mode selfie
+            block.body.position.z = 0;
+            block.body.velocity.z = 0;
+            block.body.angularVelocity.x = 0;
+            block.body.angularVelocity.y = 0;
 
-        // Kunci rotasi agar hanya berputar di sumbu Z (tidak berputar ke depan/belakang)
-        block.body.quaternion.x = 0;
-        block.body.quaternion.y = 0;
-        const len = Math.sqrt(block.body.quaternion.z * block.body.quaternion.z + block.body.quaternion.w * block.body.quaternion.w);
-        if (len > 0) {
-            block.body.quaternion.z /= len;
-            block.body.quaternion.w /= len;
+            // Kunci rotasi agar hanya berputar di sumbu Z (tidak berputar ke depan/belakang)
+            block.body.quaternion.x = 0;
+            block.body.quaternion.y = 0;
+            const len = Math.sqrt(block.body.quaternion.z * block.body.quaternion.z + block.body.quaternion.w * block.body.quaternion.w);
+            if (len > 0) {
+                block.body.quaternion.z /= len;
+                block.body.quaternion.w /= len;
+            }
         }
 
         if (!block.isGrabbed) {
@@ -1267,9 +1321,18 @@ if (btnDelete) {
 
 // Create or update the main block object according to selection
 function createOrUpdateBlock(shape, colorHex) {
-    // Memunculkan balok baru dengan posisi random di sumbu X agar tidak bertumpuk persis
-    const randomX = (Math.random() - 0.5) * 4;
-    spawnBlock(shape, colorHex, randomX, 3, 0);
+    if (currentFacingMode === 'environment' && arReticle && arReticle.visible) {
+        // Mode AR: Jatuhkan balok TEPAT di tengah lingkaran penanda (arReticle)
+        const dropX = arReticle.position.x;
+        const dropZ = arReticle.position.z;
+        const dropY = arReticle.position.y + 4; // Dari atas lingkaran
+        spawnBlock(shape, colorHex, dropX, dropY, dropZ);
+        updateStatus('Balok dijatuhkan ke dalam lingkaran penanda AR 🎯');
+    } else {
+        // Mode Selfie / Studio biasa: Posisi acak X
+        const randomX = (Math.random() - 0.5) * 4;
+        spawnBlock(shape, colorHex, randomX, 3, 0);
+    }
 }
 
 // --- LOGIKA EVENT LISTENERS TOMBOL BARU ---
