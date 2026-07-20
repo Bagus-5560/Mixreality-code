@@ -197,14 +197,14 @@ function recordAction(action) {
 
 function removeBlockFromSimulation(blockObj) {
     scene.remove(blockObj.mesh);
-    try { world.remove(blockObj.body); } catch (e) {}
+    try { world.remove(blockObj.body); } catch (e) { }
     blocks = blocks.filter(b => b !== blockObj);
     if (grabbedBlock === blockObj) grabbedBlock = null;
 }
 
 function addBlockToSimulation(blockObj) {
     scene.add(blockObj.mesh);
-    try { world.addBody(blockObj.body); } catch (e) {}
+    try { world.addBody(blockObj.body); } catch (e) { }
     // Reset posisi dan kecepatan fisika agar stabil
     blockObj.body.velocity.set(0, 0, 0);
     blockObj.body.angularVelocity.set(0, 0, 0);
@@ -409,12 +409,12 @@ function spawnBlock(shape, colorHex, x = 0, y = 0, z = 0) {
         material: blockMaterial
     });
     body.addShape(physicsShape, new CANNON.Vec3(0, 0, 0), shapeOrientation);
-    
+
     // Konfigurasi tidur (sleep) agar tumpukan stabil dan tidak bergetar/bergeser sendiri
     body.allowSleep = true;
     body.sleepSpeedLimit = 0.05; // Lebih sensitif (kecepatan < 0.05 m/s)
     body.sleepTimeLimit = 1.0;  // Harus benar-benar diam selama 1.0 detik sebelum beku
-    
+
     body.computeAABB();
     body.position.set(x, y, z);
     world.addBody(body);
@@ -482,7 +482,25 @@ const cameraBtn = document.getElementById('camera-btn');
 // ==========================================
 function mapTo3DSpace(x, y) {
     const targetX = (currentFacingMode === 'user') ? (1 - x) : x;
-    return { x: (targetX - 0.5) * 14, y: -(y - 0.5) * 10 };
+    const simple2D = { x: (targetX - 0.5) * 14, y: -(y - 0.5) * 10 };
+
+    // In AR mode (environment camera), use raycasting for proper 3D picking
+    if (currentFacingMode === 'environment') {
+        const ndcX = targetX * 2 - 1;
+        const ndcY = -(y * 2 - 1);
+        const raycaster = new THREE.Raycaster();
+        raycaster.setFromCamera(new THREE.Vector2(ndcX, ndcY), camera);
+        // Raycast to the z=0 plane where blocks live
+        const planeNormal = new THREE.Vector3(0, 0, 1);
+        const planePoint = new THREE.Vector3(0, 0, 0);
+        const plane = new THREE.Plane();
+        plane.setFromNormalAndCoplanarPoint(planeNormal, planePoint);
+        const intersection = new THREE.Vector3();
+        if (raycaster.ray.intersectPlane(plane, intersection)) {
+            return { x: intersection.x, y: intersection.y };
+        }
+    }
+    return simple2D;
 }
 
 function getDistance(p1, p2) {
@@ -563,7 +581,7 @@ function toggleCamera() {
 // Fungsi Memutar/Flip Kamera (Depan <-> Belakang / Mode AR Dunia Nyata)
 function flipCamera() {
     currentFacingMode = (currentFacingMode === 'user') ? 'environment' : 'user';
-    
+
     // Terapkan efek cermin ke video dan tracking canvas jika kamera depan, dan hilangkan jika kamera belakang
     if (currentFacingMode === 'user') {
         videoElement.style.transform = 'scaleX(-1)';
@@ -571,11 +589,11 @@ function flipCamera() {
         floor.visible = true; // Tampilkan kembali lantai ubin studio
         arShadowFloor.visible = false;
         if (arReticle) arReticle.visible = false;
-        
+
         // Reset posisi kamera ke pandangan studio standar
         camera.position.set(0, 0, 10);
         camera.lookAt(0, 0, 0);
-        
+
         updateStatus('Mode Kamera Depan (Selfie Studio).');
     } else {
         videoElement.style.transform = 'none';
@@ -583,12 +601,19 @@ function flipCamera() {
         floor.visible = false; // Sembunyikan ubin buatan agar lantai dunia nyata dari kamera terlihat 100%
         arShadowFloor.visible = true; // Aktifkan lantai bayangan realistis di atas video dunia nyata
         if (arReticle) arReticle.visible = true; // Aktifkan penanda deteksi dataran AR
-        
+
         resetARWorldAnchor(); // Kunci penjangkaran objek ke meja fisik di dunia nyata
-        
-        updateStatus('Mode AR Dunia Nyata Aktif 📍. Objek 3D terkunci di atas meja Anda! Gerakkan/miringkan HP untuk melihat sekeliling objek dari berbagai sudut 360°.');
+        requestGyroPermission(); // Minta izin sensor gyro (wajib di iOS 13+)
+
+        // Cek ketersediaan WebXR untuk AR 6DoF sejati
+        if (navigator.xr) {
+            navigator.xr.isSessionSupported('immersive-ar').then(ok => {
+                if (ok) updateStatus('Mode AR Aktif 📍. Ketuk tombol 👓 untuk AR 6DoF sejati (objek terkunci 100% di meja)! Atau geser layar untuk orbit manual.');
+            });
+        }
+        updateStatus('Mode AR Aktif 📍. Putar/miringkan HP untuk melihat objek dari sudut berbeda. Geser layar untuk orbit manual 360°.');
     }
-    
+
     // Jika kamera sedang aktif, hentikan & jalankan kembali dengan facingMode baru
     if (cameraActive) {
         if (cameraUtils) {
@@ -652,7 +677,8 @@ hands.onResults((results) => {
         // --- PINCH TO CLICK OR HOLD HTML BUTTONS ---
         let clickedHTMLButton = false;
         if (isHand1Pinching) {
-            const screenX = (1 - midX1) * window.innerWidth;
+            // Front camera mirrors X, rear camera does not
+            const screenX = (currentFacingMode === 'user') ? (1 - midX1) * window.innerWidth : midX1 * window.innerWidth;
             const screenY = midY1 * window.innerHeight;
             const element = document.elementFromPoint(screenX, screenY);
             if (element) {
@@ -791,7 +817,7 @@ hands.onResults((results) => {
                             const dx = grabbedBlock.body.position.x - grabbedBlock.startPosition.x;
                             const dy = grabbedBlock.body.position.y - grabbedBlock.startPosition.y;
                             const distMoved = Math.sqrt(dx * dx + dy * dy);
-                            
+
                             if (distMoved > 0.05) { // Hanya rekam jika ada pergeseran nyata
                                 recordAction({
                                     type: 'move',
@@ -824,7 +850,7 @@ hands.onResults((results) => {
                     if (activePaintColor !== null) {
                         const oldColor = closestBlock.baseColor;
                         const newColor = activePaintColor;
-                        
+
                         recordAction({
                             type: 'color_multi',
                             changes: [{
@@ -833,10 +859,10 @@ hands.onResults((results) => {
                                 newColor: newColor
                             }]
                         });
-                        
+
                         closestBlock.baseColor = newColor;
                         closestBlock.mesh.material.color.setHex(newColor);
-                        
+
                         // Reset warna aktif & UI feedback
                         activePaintColor = null;
                         if (btnColorPicker) {
@@ -845,7 +871,7 @@ hands.onResults((results) => {
                         }
                         document.querySelectorAll('.color-dot').forEach(d => d.classList.remove('active'));
                         if (colorPalette) colorPalette.classList.add('hidden');
-                        
+
                         updateStatus('Warna balok berhasil diubah.');
                         btnCooldown = 20;
                     }
@@ -907,7 +933,7 @@ hands.onResults((results) => {
                 const dx = grabbedBlock.body.position.x - grabbedBlock.startPosition.x;
                 const dy = grabbedBlock.body.position.y - grabbedBlock.startPosition.y;
                 const distMoved = Math.sqrt(dx * dx + dy * dy);
-                
+
                 if (distMoved > 0.05) { // Hanya rekam jika ada pergeseran nyata
                     recordAction({
                         type: 'move',
@@ -944,10 +970,10 @@ function toScreenPosition(obj, camera) {
     obj.updateMatrixWorld();
     vector.setFromMatrixPosition(obj.matrixWorld);
     vector.project(camera);
-    
+
     const x = (vector.x * 0.5 + 0.5) * window.innerWidth;
     const y = (vector.y * -0.5 + 0.5) * window.innerHeight;
-    
+
     return { x, y };
 }
 
@@ -955,22 +981,22 @@ function toScreenPosition(obj, camera) {
 const scaleBadge = document.getElementById('scale-badge');
 function updateScaleBadge() {
     if (!scaleBadge) return;
-    
+
     if (isScaling && grabbedBlock) {
         // Project grabbed block position to screen
         const screenPos = toScreenPosition(grabbedBlock.mesh, camera);
         scaleBadge.style.left = `${screenPos.x}px`;
         scaleBadge.style.top = `${screenPos.y}px`;
-        
+
         // Scale percentage based on initial scale of 0.5 representing 100%
         const currentScale = grabbedBlock.mesh.scale.x;
         const percent = Math.round((currentScale / 0.5) * 100);
-        
+
         // Calculate bounding box dimensions
         const box = new THREE.Box3().setFromObject(grabbedBlock.mesh);
         const size = new THREE.Vector3();
         box.getSize(size);
-        
+
         let sizeText = '';
         if (grabbedBlock.shape === 'cube') {
             sizeText = `${size.x.toFixed(2)} × ${size.y.toFixed(2)} × ${size.z.toFixed(2)}`;
@@ -983,12 +1009,12 @@ function updateScaleBadge() {
         } else {
             sizeText = `${size.x.toFixed(2)} × ${size.y.toFixed(2)} × ${size.z.toFixed(2)}`;
         }
-        
+
         const valueEl = scaleBadge.querySelector('.scale-value');
         const dimsEl = scaleBadge.querySelector('.scale-dims');
         if (valueEl) valueEl.textContent = `${percent}%`;
         if (dimsEl) dimsEl.textContent = sizeText;
-        
+
         if (scaleBadge.classList.contains('hidden')) {
             scaleBadge.classList.remove('hidden');
             // Force reflow
@@ -1019,6 +1045,7 @@ function animate() {
 
     // Majukan simulasi fisika Cannon.js
     world.step(1 / 60);
+
 
     // Animasi denyut & rotasi reticle penanda dataran AR
     if (arReticle && arReticle.visible) {
@@ -1169,14 +1196,14 @@ if (btnScrollUp && carouselWrapper) {
     btnScrollUp.addEventListener('mousedown', () => startScrolling(-1));
     btnScrollUp.addEventListener('mouseup', stopScrolling);
     btnScrollUp.addEventListener('mouseleave', stopScrolling);
-    
+
     btnScrollUp.addEventListener('touchstart', (e) => {
         e.preventDefault();
         startScrolling(-1);
     }, { passive: false });
     btnScrollUp.addEventListener('touchend', stopScrolling);
     btnScrollUp.addEventListener('touchcancel', stopScrolling);
-    
+
     // Fallback click
     btnScrollUp.addEventListener('click', (e) => {
         if (!scrollInterval) {
@@ -1189,14 +1216,14 @@ if (btnScrollDown && carouselWrapper) {
     btnScrollDown.addEventListener('mousedown', () => startScrolling(1));
     btnScrollDown.addEventListener('mouseup', stopScrolling);
     btnScrollDown.addEventListener('mouseleave', stopScrolling);
-    
+
     btnScrollDown.addEventListener('touchstart', (e) => {
         e.preventDefault();
         startScrolling(1);
     }, { passive: false });
     btnScrollDown.addEventListener('touchend', stopScrolling);
     btnScrollDown.addEventListener('touchcancel', stopScrolling);
-    
+
     // Fallback click
     btnScrollDown.addEventListener('click', (e) => {
         if (!scrollInterval) {
@@ -1329,7 +1356,7 @@ function startLevel(levelKey) {
     isGameMode = true;
     currentGameLevel = levelKey;
     gameWinChecked = false;
-    
+
     // Tampilkan HUD
     const hud = document.getElementById('game-hud');
     const hudName = document.getElementById('hud-level-name');
@@ -1337,12 +1364,12 @@ function startLevel(levelKey) {
         hud.classList.remove('hidden');
         hudName.textContent = blueprintsData[levelKey].name;
     }
-    
+
     // Buat ghost meshes
     const items = blueprintsData[levelKey].items;
     items.forEach((item) => {
         const geo = createBlueprintGeometry(item.shape);
-        
+
         // Material blueprint: soft glowing neon blue wireframe
         const mat = new THREE.MeshBasicMaterial({
             color: 0x00ffff,
@@ -1350,18 +1377,18 @@ function startLevel(levelKey) {
             transparent: true,
             opacity: 0.45
         });
-        
+
         const mesh = new THREE.Mesh(geo, mat);
         mesh.scale.set(item.scale, item.scale, item.scale);
         mesh.position.set(item.pos.x, item.pos.y, item.pos.z);
-        
+
         // Beberapa rotasi geometri default agar sesuai visual
         if (item.shape === 'tri' || item.shape === 'pyramid') {
             mesh.rotation.y = Math.PI / 4;
         }
-        
+
         scene.add(mesh);
-        
+
         blueprintObjects.push({
             mesh: mesh,
             shape: item.shape,
@@ -1371,25 +1398,25 @@ function startLevel(levelKey) {
             matched: false
         });
     });
-    
+
     updateStatus('Tantangan dimulai. Susun balok sesuai hologram biru!');
 }
 
 function clearLevel() {
     gameWinChecked = false;
-    
+
     // Hapus ghost meshes dari scene
     blueprintObjects.forEach(obj => {
         scene.remove(obj.mesh);
-        try { obj.mesh.geometry.dispose(); } catch (e) {}
-        try { obj.mesh.material.dispose(); } catch (e) {}
+        try { obj.mesh.geometry.dispose(); } catch (e) { }
+        try { obj.mesh.material.dispose(); } catch (e) { }
     });
     blueprintObjects = [];
-    
+
     // Hapus semua block pemain saat ini
     const blocksCopy = [...blocks];
     blocksCopy.forEach(b => removeBlockFromSimulation(b));
-    
+
     // Sembunyikan sukses modal jika terbuka
     const successModal = document.getElementById('success-modal');
     if (successModal) successModal.classList.add('hidden');
@@ -1399,48 +1426,48 @@ function exitLevel() {
     clearLevel();
     isGameMode = false;
     currentGameLevel = null;
-    
+
     const hud = document.getElementById('game-hud');
     if (hud) hud.classList.add('hidden');
-    
+
     const selector = document.getElementById('level-selector-overlay');
     if (selector) selector.classList.add('hidden');
-    
+
     showScreen('home');
 }
 
 function checkGameWinCondition() {
     if (!isGameMode || blueprintObjects.length === 0 || gameWinChecked) return;
-    
+
     // Reset status match blueprint
     blueprintObjects.forEach(bp => {
         bp.matched = false;
         bp.mesh.material.color.setHex(0x00ffff); // Reset ke biru neon
         bp.mesh.material.opacity = 0.45;
     });
-    
+
     let allMatched = true;
-    
+
     // Cari balok pemain yang cocok untuk setiap item blueprint
     blueprintObjects.forEach(bp => {
         let foundMatch = false;
-        
+
         for (let i = 0; i < blocks.length; i++) {
             const block = blocks[i];
-            
+
             // Cek tipe bentuk
             if (block.shape !== bp.shape) continue;
-            
+
             // Hitung jarak 3D
             const dist = block.mesh.position.distanceTo(new THREE.Vector3(bp.pos.x, bp.pos.y, bp.pos.z));
-            
+
             // Jarak < 0.65 unit dianggap pas
             if (dist < 0.65) {
                 foundMatch = true;
                 break;
             }
         }
-        
+
         if (foundMatch) {
             bp.matched = true;
             bp.mesh.material.color.setHex(0x22c55e); // Hijau sukses
@@ -1449,7 +1476,7 @@ function checkGameWinCondition() {
             allMatched = false;
         }
     });
-    
+
     if (allMatched && blocks.length > 0) {
         gameWinChecked = true;
         // Tampilkan modal kemenangan
@@ -1500,7 +1527,7 @@ document.querySelectorAll('.lvl-btn').forEach(btn => {
     btn.addEventListener('click', (e) => {
         const levelKey = btn.dataset.level;
         if (!levelKey) return;
-        
+
         if (levelSelectorOverlay) {
             levelSelectorOverlay.classList.add('hidden');
         }
@@ -1558,56 +1585,106 @@ window.addEventListener('resize', () => {
 // ==========================================
 let arAnchorOrientation = null;
 const AR_CAMERA_DISTANCE = 8.0;
+let gyroSmooth = { theta: 0, phi: Math.PI / 3 }; // Smoothed gyro values
+let gyroPermissionRequested = false;
 
 function resetARWorldAnchor() {
     arAnchorOrientation = null;
+    gyroSmooth = { theta: 0, phi: Math.PI / 3 };
+    arOrbitTheta = 0;
+    arOrbitPhi = Math.PI / 3;
+    gyroActive = false;
     camera.position.set(0, 1.5, AR_CAMERA_DISTANCE);
     camera.lookAt(0, floorY + 1, 0);
 }
 
+// Request DeviceOrientation permission (required on iOS 13+)
+async function requestGyroPermission() {
+    if (gyroPermissionRequested) return;
+    gyroPermissionRequested = true;
+
+    if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+        try {
+            const permission = await DeviceOrientationEvent.requestPermission();
+            if (permission === 'granted') {
+                updateStatus('Izin sensor gyroscope diberikan ✅');
+            } else {
+                updateStatus('Izin gyroscope ditolak. Gunakan geser layar untuk orbit manual.', true);
+            }
+        } catch (err) {
+            console.error('Gyro permission error:', err);
+        }
+    }
+}
+
+// Touch/Mouse orbit state (declared here for use in gyro handler below)
+let isOrbitingAR = false;
+let prevTouchX = 0;
+let prevTouchY = 0;
+let arOrbitTheta = 0; // Horizontal orbit angle (managed by touch/mouse/gyro)
+let arOrbitPhi = Math.PI / 3; // Vertical orbit angle
+let gyroActive = false; // Track if gyro data is actually being received
+
 // Sensor Gyroscope & Motion HP: Objek 3D Tetap Terkunci di Meja, Kamera Bergerak Sesuai Gerakan HP Physical
 if (window.DeviceOrientationEvent) {
     window.addEventListener('deviceorientation', (e) => {
-        if (currentFacingMode !== 'environment') return;
-        
+        if (currentFacingMode !== 'environment' || isOrbitingAR) return;
+
         const alpha = e.alpha; // Yaw (0 hingga 360 deg)
         const beta = e.beta;   // Pitch (-180 hingga 180 deg)
         const gamma = e.gamma; // Roll (-90 hingga 90 deg)
 
         if (alpha === null || beta === null || gamma === null) return;
 
-        // Catat posisi HP pertama kali saat AR diaktifkan sebagai titik acuan lokasi meja
+        // Mark gyro as active on first valid data
+        if (!gyroActive) {
+            gyroActive = true;
+            updateStatus('Gyroscope aktif ✅ Miringkan/putar HP untuk melihat dari sudut berbeda.');
+        }
+
+        // Catat orientasi HP pertama kali saat AR diaktifkan sebagai titik acuan
         if (!arAnchorOrientation) {
             arAnchorOrientation = { alpha, beta, gamma };
         }
 
-        // Hitung sudut relatif pergerakan fisik HP pengguna terhadap meja
-        const dAlpha = THREE.MathUtils.degToRad(alpha - arAnchorOrientation.alpha);
-        const dBeta = THREE.MathUtils.degToRad(beta - arAnchorOrientation.beta);
-        const dGamma = THREE.MathUtils.degToRad(gamma - arAnchorOrientation.gamma);
+        // Hitung delta rotasi relatif terhadap posisi awal
+        let dAlpha = alpha - arAnchorOrientation.alpha;
+        // Handle wrap-around (0-360 boundary)
+        if (dAlpha > 180) dAlpha -= 360;
+        if (dAlpha < -180) dAlpha += 360;
+        const dBeta = beta - arAnchorOrientation.beta;
 
-        // Titik jangkar meja tempat objek 3D diletakkan
-        const anchor = new THREE.Vector3(0, floorY + 1, 0);
+        // Convert to radians and apply to orbit angles
+        const targetTheta = THREE.MathUtils.degToRad(-dAlpha); // Negative: phone right → camera orbits right → objects appear to go left
+        let targetPhi = (Math.PI / 3) + THREE.MathUtils.degToRad(dBeta) * 0.5;
+        targetPhi = Math.max(0.15, Math.min(Math.PI / 2 - 0.05, targetPhi));
 
-        // Pindahkan posisi kamera 3D mengelilingi meja sesuai gerakan HP fisik pengguna
-        let theta = dAlpha;                       // Mengelilingi meja secara horizontal
-        let phi = (Math.PI / 3) + (dBeta * 0.8);   // Mengamati meja dari atas ke samping (Pitch)
-        phi = Math.max(0.15, Math.min(Math.PI / 2 - 0.05, phi));
+        // Smooth interpolation
+        arOrbitTheta += (targetTheta - arOrbitTheta) * 0.2;
+        arOrbitPhi += (targetPhi - arOrbitPhi) * 0.2;
 
-        camera.position.x = anchor.x + AR_CAMERA_DISTANCE * Math.sin(phi) * Math.sin(theta);
-        camera.position.y = anchor.y + AR_CAMERA_DISTANCE * Math.cos(phi);
-        camera.position.z = anchor.z + AR_CAMERA_DISTANCE * Math.sin(phi) * Math.cos(theta);
-
-        camera.rotation.z = -dGamma * 0.5; // Roll kemiringan kamera
-        camera.lookAt(anchor); // Kamera selalu menatap objek yang terkunci di meja
+        // Apply orbit
+        applyAROrbit();
     }, true);
 }
 
-// Tambahan Touch Pan / Drag untuk eksplorasi manual keliling meja
-let isOrbitingAR = false;
-let prevTouchX = 0;
-let prevTouchY = 0;
+// Central function to position camera in orbit around objects
+function applyAROrbit() {
+    const anchor = new THREE.Vector3(0, floorY + 1, 0);
+    camera.position.x = anchor.x + AR_CAMERA_DISTANCE * Math.sin(arOrbitPhi) * Math.sin(arOrbitTheta);
+    camera.position.y = anchor.y + AR_CAMERA_DISTANCE * Math.cos(arOrbitPhi);
+    camera.position.z = anchor.z + AR_CAMERA_DISTANCE * Math.sin(arOrbitPhi) * Math.cos(arOrbitTheta);
+    camera.lookAt(anchor);
+}
 
+// Generic orbit function used by both touch and mouse
+function handleOrbitDelta(deltaX, deltaY) {
+    arOrbitTheta -= deltaX * 0.008;
+    arOrbitPhi = Math.max(0.1, Math.min(Math.PI / 2 - 0.05, arOrbitPhi - deltaY * 0.008));
+    applyAROrbit();
+}
+
+// ---- TOUCH ORBIT (Mobile) ----
 window.addEventListener('touchstart', (e) => {
     if (currentFacingMode === 'environment' && e.touches.length === 1) {
         const target = e.target;
@@ -1615,6 +1692,8 @@ window.addEventListener('touchstart', (e) => {
             isOrbitingAR = true;
             prevTouchX = e.touches[0].clientX;
             prevTouchY = e.touches[0].clientY;
+            // Reset gyro anchor so gyro doesn't fight with touch orbit
+            arAnchorOrientation = null;
         }
     }
 });
@@ -1625,23 +1704,166 @@ window.addEventListener('touchmove', (e) => {
         const deltaY = e.touches[0].clientY - prevTouchY;
         prevTouchX = e.touches[0].clientX;
         prevTouchY = e.touches[0].clientY;
-
-        // Pindahkan posisi kamera mengelilingi titik jangkar meja (0, floorY + 1, 0)
-        const anchor = new THREE.Vector3(0, floorY + 1, 0);
-        const offset = camera.position.clone().sub(anchor);
-        const radius = offset.length();
-
-        let theta = Math.atan2(offset.x, offset.z);
-        let phi = Math.acos(Math.max(-1, Math.min(1, (camera.position.y - anchor.y) / radius)));
-
-        theta -= deltaX * 0.008;
-        phi = Math.max(0.1, Math.min(Math.PI / 2 - 0.05, phi - deltaY * 0.008));
-
-        camera.position.x = anchor.x + radius * Math.sin(phi) * Math.sin(theta);
-        camera.position.y = anchor.y + radius * Math.cos(phi);
-        camera.position.z = anchor.z + radius * Math.sin(phi) * Math.cos(theta);
-        camera.lookAt(anchor);
+        handleOrbitDelta(deltaX, deltaY);
     }
 });
 
 window.addEventListener('touchend', () => { isOrbitingAR = false; });
+
+// ---- MOUSE ORBIT (Desktop) ----
+let isMouseOrbitingAR = false;
+let prevMouseX = 0;
+let prevMouseY = 0;
+
+window.addEventListener('mousedown', (e) => {
+    if (currentFacingMode === 'environment' && e.button === 0) {
+        const target = e.target;
+        if (!target.closest('button') && !target.closest('.right-controls') && !target.closest('.bottom-fab') && !target.closest('.level-overlay') && !target.closest('nav') && !target.closest('.color-picker-container')) {
+            isMouseOrbitingAR = true;
+            isOrbitingAR = true; // Block gyro during mouse orbit
+            prevMouseX = e.clientX;
+            prevMouseY = e.clientY;
+            e.preventDefault();
+        }
+    }
+});
+
+window.addEventListener('mousemove', (e) => {
+    if (isMouseOrbitingAR && currentFacingMode === 'environment') {
+        const deltaX = e.clientX - prevMouseX;
+        const deltaY = e.clientY - prevMouseY;
+        prevMouseX = e.clientX;
+        prevMouseY = e.clientY;
+        handleOrbitDelta(deltaX, deltaY);
+    }
+});
+
+window.addEventListener('mouseup', () => {
+    isMouseOrbitingAR = false;
+    isOrbitingAR = false;
+});
+
+// ==========================================
+// 7. WEBXR NATIVE AR 6DoF (MARKERLESS AR SEJATI)
+// ==========================================
+// Catatan: AR markerless sejati (objek 100% terkunci di meja saat HP digeser)
+// HANYA bisa dicapai melalui WebXR AR (Chrome Android + ARCore).
+// Tanpa WebXR, browser web tidak dapat mendeteksi pergeseran posisi HP (translasi).
+// Gyroscope hanya memberikan rotasi (pitch/yaw/roll), bukan posisi X/Y/Z.
+// Oleh karena itu, mode non-WebXR menggunakan:
+//   - Gyroscope untuk rotasi kamera mengikuti kemiringan HP
+//   - Touch orbit manual untuk melihat objek dari sudut berbeda
+
+const btnWebXRAR = document.getElementById('btn-webxr-ar');
+let xrSession = null;
+let xrHitTestSource = null;
+
+// Deteksi ketersediaan WebXR AR
+if (navigator.xr) {
+    navigator.xr.isSessionSupported('immersive-ar').then((supported) => {
+        if (supported && btnWebXRAR) {
+            btnWebXRAR.classList.remove('hidden');
+            console.log('WebXR AR didukung! Tombol 👓 ditampilkan.');
+        }
+    }).catch(console.error);
+}
+
+// Handler tombol WebXR AR
+if (btnWebXRAR) {
+    btnWebXRAR.addEventListener('click', async () => {
+        if (!navigator.xr) {
+            updateStatus('WebXR tidak didukung di browser ini. Gunakan Chrome di Android.');
+            return;
+        }
+
+        try {
+            // Hentikan kamera MediaPipe terlebih dahulu
+            stopCamera();
+
+            const session = await navigator.xr.requestSession('immersive-ar', {
+                requiredFeatures: ['hit-test', 'local-floor'],
+                optionalFeatures: ['dom-overlay'],
+                domOverlay: { root: document.getElementById('screen-builder') }
+            });
+
+            xrSession = session;
+            renderer.xr.enabled = true;
+            renderer.xr.setReferenceSpaceType('local-floor');
+            await renderer.xr.setSession(session);
+
+            // Sembunyikan UI yang tidak perlu di mode WebXR
+            floor.visible = false;
+            arShadowFloor.visible = true;
+            arShadowFloor.position.y = 0; // Lantai di level tanah WebXR
+            if (arReticle) {
+                arReticle.visible = true;
+                arReticle.position.y = 0.01;
+            }
+
+            // Request hit-test source untuk deteksi permukaan
+            const viewerSpace = await session.requestReferenceSpace('viewer');
+            const hitTestSource = await session.requestHitTestSource({ space: viewerSpace });
+            xrHitTestSource = hitTestSource;
+
+            // Override animate loop untuk WebXR
+            renderer.setAnimationLoop((timestamp, frame) => {
+                if (frame && xrHitTestSource) {
+                    const referenceSpace = renderer.xr.getReferenceSpace();
+                    const hitTestResults = frame.getHitTestResults(xrHitTestSource);
+
+                    if (hitTestResults.length > 0) {
+                        const hit = hitTestResults[0];
+                        const pose = hit.getPose(referenceSpace);
+
+                        if (pose && arReticle) {
+                            arReticle.visible = true;
+                            arReticle.position.set(
+                                pose.transform.position.x,
+                                pose.transform.position.y,
+                                pose.transform.position.z
+                            );
+                            arReticle.updateMatrixWorld(true);
+                        }
+                    }
+                }
+
+                // Fisika tetap berjalan
+                world.step(1 / 60);
+                for (let i = blocks.length - 1; i >= 0; i--) {
+                    const block = blocks[i];
+                    if (!block.isGrabbed) {
+                        block.mesh.position.copy(block.body.position);
+                        block.mesh.quaternion.copy(block.body.quaternion);
+                    }
+                }
+
+                renderer.render(scene, camera);
+            });
+
+            updateStatus('WebXR AR 6DoF Aktif 👓! Arahkan HP ke meja untuk mendeteksi permukaan. Objek terkunci 100% di dunia nyata!');
+
+            session.addEventListener('end', () => {
+                xrSession = null;
+                xrHitTestSource = null;
+                renderer.xr.enabled = false;
+                renderer.setAnimationLoop(null);
+
+                // Kembalikan lantai dan kamera studio
+                floor.visible = true;
+                arShadowFloor.visible = false;
+                if (arReticle) arReticle.visible = false;
+                arShadowFloor.position.y = floorY;
+                camera.position.set(0, 0, 10);
+                camera.lookAt(0, 0, 0);
+
+                // Jalankan kembali animate loop biasa
+                animate();
+
+                updateStatus('Sesi WebXR AR berakhir. Kembali ke mode studio.');
+            });
+        } catch (err) {
+            console.error('WebXR AR Session Error:', err);
+            updateStatus('Gagal memulai WebXR AR: ' + err.message, true);
+        }
+    });
+}

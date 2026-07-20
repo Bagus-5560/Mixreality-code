@@ -125,6 +125,14 @@ body {
     box-shadow: 0 8px 25px rgba(255, 75, 75, 0.5);
     transform: scale(1.1);
 }
+.rc-btn.webxr-ar {
+    background: linear-gradient(135deg, #00c6ff, #0072ff) !important;
+    color: white !important;
+    box-shadow: 0 6px 16px rgba(0, 114, 255, 0.4);
+}
+.rc-btn.webxr-ar.hidden {
+    display: none !important;
+}
 
 /* Top Center Controls (Undo & Redo) */
 .top-center-controls {
