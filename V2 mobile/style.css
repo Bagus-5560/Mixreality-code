@@ -801,3 +801,19 @@ body {
     .avatar { width:68px; height:68px; font-size:32px }
     .big-btn { padding:14px 18px; border-radius:22px }
 }
+
+/* WebXR DOM Overlay Fixes */
+#screen-builder.xr-active {
+    background: transparent !important;
+    pointer-events: none; /* Biar touch tembus ke WebXR */
+}
+
+#screen-builder.xr-active > * {
+    pointer-events: auto; /* Kembalikan touch ke elemen UI anak-anaknya */
+}
+
+/* Tapi pastikan canvas tetap tembus */
+#screen-builder.xr-active canvas,
+#screen-builder.xr-active video {
+    pointer-events: none !important;
+}

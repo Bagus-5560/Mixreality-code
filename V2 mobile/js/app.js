@@ -11,61 +11,6 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setPixelRatio(window.devicePixelRatio);
 renderer.xr.enabled = true; // Enable WebXR
 
-const builderScreen = document.getElementById('screen-builder');
-if (builderScreen) {
-    const arBtn = document.createElement('button');
-    arBtn.style.position = 'absolute';
-    arBtn.style.bottom = '80px';
-    arBtn.style.left = 'calc(50% - 50px)';
-    arBtn.style.width = '100px';
-    arBtn.style.padding = '12px 6px';
-    arBtn.style.border = '1px solid #fff';
-    arBtn.style.borderRadius = '4px';
-    arBtn.style.background = 'rgba(0,0,0,0.5)';
-    arBtn.style.color = '#fff';
-    arBtn.style.fontFamily = 'sans-serif';
-    arBtn.style.textAlign = 'center';
-    arBtn.style.cursor = 'pointer';
-    arBtn.style.zIndex = '999';
-    arBtn.innerHTML = 'ENTER AR';
-
-    let currentSession = null;
-    
-    if ('xr' in navigator) {
-        navigator.xr.isSessionSupported('immersive-ar').then((supported) => {
-            if (supported) {
-                arBtn.onclick = () => {
-                    if (currentSession === null) {
-                        navigator.xr.requestSession('immersive-ar', { requiredFeatures: ['hit-test'] }).then((session) => {
-                            currentSession = session;
-                            renderer.xr.setReferenceSpaceType('local');
-                            renderer.xr.setSession(session);
-                            arBtn.innerHTML = 'EXIT AR';
-                            
-                            session.addEventListener('end', () => {
-                                currentSession = null;
-                                arBtn.innerHTML = 'ENTER AR';
-                            });
-                        }).catch((err) => {
-                            updateStatus('Gagal memulai AR: ' + err.message, true);
-                        });
-                    } else {
-                        currentSession.end();
-                    }
-                };
-            } else {
-                arBtn.innerHTML = 'AR NOT SUPPORTED';
-                arBtn.disabled = true;
-            }
-        });
-    } else {
-        arBtn.innerHTML = 'HTTPS REQUIRED';
-        arBtn.disabled = true;
-        console.warn('WebXR tidak tersedia. Pastikan Anda menggunakan HTTPS atau localhost.');
-    }
-    
-    builderScreen.appendChild(arBtn);
-}
 
 const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
 scene.add(ambientLight);
@@ -137,21 +82,24 @@ const xrController = renderer.xr.getController(0);
 xrController.addEventListener('select', onXRSelect);
 scene.add(xrController);
 
+let tableLocked = false;
+
 function onXRSelect() {
-    if (isWebXRMode && reticle.visible) {
+    if (isWebXRMode && reticle.visible && !tableLocked) {
         // Set floor to reticle's Y position
         const newFloorY = reticle.position.y;
         updateFloorPosition(newFloorY, 0, false);
-        updateStatus('Lantai AR disetel pada Y: ' + newFloorY.toFixed(2));
-        
-        // Optionally spawn a block if we are holding one, or just let them use the UI
-        // We can just rely on the UI to spawn blocks on the new floor
+        tableLocked = true;
+        // Reticle is now locked, we can hide it or change color. Let's just hide it.
+        reticle.visible = false; 
+        updateStatus('Meja AR terkunci! Silakan pilih balok dari menu di bawah.');
     }
 }
 
 renderer.xr.addEventListener('sessionstart', () => {
     isWebXRMode = true;
-    updateStatus('Mode AR aktif. Arahkan kamera ke lantai lalu tap layar untuk set lantai.');
+    tableLocked = false;
+    updateStatus('Mode AR aktif. Arahkan kamera ke meja lalu tap layar untuk mengunci posisi meja.');
     
     // Matikan kamera MediaPipe jika sedang menyala agar tidak crash
     if (cameraActive) {
@@ -164,6 +112,7 @@ renderer.xr.addEventListener('sessionend', () => {
     hitTestSourceRequested = false;
     hitTestSource = null;
     reticle.visible = false;
+    tableLocked = false;
     updateStatus('Keluar dari Mode AR.');
 });
 
@@ -172,7 +121,7 @@ renderer.xr.addEventListener('sessionend', () => {
 // 1B. SETUP PHYSICS (CANNON.JS)
 // ==========================================
 const world = new CANNON.World();
-world.gravity.set(0, -38, 0); // Gravitasi disesuaikan agar terasa nyata dan cepat pada skala visual ini
+world.gravity.set(0, -9.8, 0); // Gravitasi bumi normal untuk objek kecil (skala tabletop)
 world.broadphase = new CANNON.NaiveBroadphase();
 world.solver.iterations = 40; // Tingkatkan dari 10 ke 40 untuk kestabilan penumpukan tinggi
 world.allowSleep = true; // Izinkan objek tidur (beku) jika diam untuk menghilangkan getaran
@@ -610,8 +559,7 @@ function spawnBlock(shape, colorHex, x = 0, y = 0, z = 0) {
     const mat = new THREE.MeshPhongMaterial({ color: colorHex || 0x00ff00 });
     const mesh = new THREE.Mesh(geo, mat);
     mesh.position.set(x, y, z);
-    // Set ukuran awal menjadi 50% (skala 0.5)
-    mesh.scale.set(0.5, 0.5, 0.5);
+    mesh.scale.set(0.05, 0.05, 0.05);
     scene.add(mesh);
 
     // --- FISIKA CANNON.JS ---
@@ -619,39 +567,39 @@ function spawnBlock(shape, colorHex, x = 0, y = 0, z = 0) {
     let shapeOrientation = null;
     switch (shape) {
         case 'cube':
-            physicsShape = new CANNON.Box(new CANNON.Vec3(0.5, 0.5, 0.5));
+            physicsShape = new CANNON.Box(new CANNON.Vec3(0.05, 0.05, 0.05));
             break;
         case 'plank':
-            physicsShape = new CANNON.Box(new CANNON.Vec3(1, 0.25, 0.5));
+            physicsShape = new CANNON.Box(new CANNON.Vec3(0.1, 0.025, 0.05));
             break;
         case 'tri':
         case 'pyramid':
-            // Cone: top radius 0, bottom radius 0.8, height 1.2
-            physicsShape = new CANNON.Cylinder(0, 0.8, 1.2, 8);
+            // Cone: top radius 0, bottom radius 0.08, height 0.12
+            physicsShape = new CANNON.Cylinder(0, 0.08, 0.12, 8);
             shapeOrientation = new CANNON.Quaternion();
             shapeOrientation.setFromAxisAngle(new CANNON.Vec3(1, 0, 0), -Math.PI / 2);
             break;
         case 'cylinder':
-            // Cylinder: top radius 0.4, bottom radius 0.4, height 1.2
-            physicsShape = new CANNON.Cylinder(0.4, 0.4, 1.2, 12);
+            // Cylinder: top radius 0.04, bottom radius 0.04, height 0.12
+            physicsShape = new CANNON.Cylinder(0.04, 0.04, 0.12, 12);
             shapeOrientation = new CANNON.Quaternion();
             shapeOrientation.setFromAxisAngle(new CANNON.Vec3(1, 0, 0), -Math.PI / 2);
             break;
         case 'halfsphere':
-            physicsShape = new CANNON.Box(new CANNON.Vec3(0.6, 0.3, 0.6));
+            physicsShape = new CANNON.Box(new CANNON.Vec3(0.06, 0.03, 0.06));
             break;
         case 'arch':
-            physicsShape = new CANNON.Box(new CANNON.Vec3(0.9, 0.7, 0.5));
+            physicsShape = new CANNON.Box(new CANNON.Vec3(0.09, 0.07, 0.05));
             break;
         case 'pent':
-            physicsShape = new CANNON.Sphere(0.8);
+            physicsShape = new CANNON.Sphere(0.08);
             break;
         default:
-            physicsShape = new CANNON.Box(new CANNON.Vec3(0.5, 0.5, 0.5));
+            physicsShape = new CANNON.Box(new CANNON.Vec3(0.05, 0.05, 0.05));
     }
 
     const body = new CANNON.Body({
-        mass: 1, // dinamis
+        mass: 0.1, // dinamis
         material: blockMaterial
     });
     body.addShape(physicsShape, new CANNON.Vec3(0, 0, 0), shapeOrientation);
@@ -849,19 +797,57 @@ function switchCamera() {
         stopCamera();
         setTimeout(() => startCamera(), 300); // delay sedikit agar stream lama benar-benar berhenti
     }
-    const cameraLabel = useBackCamera ? 'belakang' : 'depan';
-    updateStatus('Mode kamera: ' + cameraLabel);
+}
+
+function startAROrCamera() {
+    if (isWebXRMode) return;
+
+    if ('xr' in navigator) {
+        navigator.xr.isSessionSupported('immersive-ar').then((supported) => {
+            if (supported) {
+                updateStatus('Meminta izin AR...');
+                navigator.xr.requestSession('immersive-ar', { 
+                    requiredFeatures: ['hit-test', 'dom-overlay'],
+                    domOverlay: { root: document.getElementById('screen-builder') }
+                }).then((session) => {
+                    // Buat background transparan dan perbaiki event click agar kamera terlihat dan bisa ditap
+                    document.getElementById('screen-builder').classList.add('xr-active');
+                    renderer.xr.setReferenceSpaceType('local');
+                    renderer.xr.setSession(session);
+                    
+                    session.addEventListener('end', () => {
+                        document.getElementById('screen-builder').classList.remove('xr-active');
+                        updateStatus('Sesi AR Berakhir. Klik tombol kamera untuk mengulang.');
+                    });
+                }).catch((err) => {
+                    updateStatus('Gagal memulai AR: ' + err.message, true);
+                    if (!cameraActive) {
+                        startCamera();
+                        showTracking = true;
+                    }
+                });
+            } else {
+                updateStatus('AR tidak didukung. Menggunakan kamera standar.', true);
+                if (!cameraActive) {
+                    startCamera();
+                    showTracking = true;
+                }
+            }
+        });
+    } else {
+        updateStatus('WebXR tidak tersedia (HTTPS diperlukan). Menggunakan kamera standar.', true);
+        if (!cameraActive) {
+            startCamera();
+            showTracking = true;
+        }
+    }
 }
 
 // Event Listener Tombol Fisik (HTML)
 if (btnTracking) {
     btnTracking.addEventListener('click', () => {
-        startCamera();
         btnTracking.style.display = 'none'; // Sembunyikan tombol fisik
-
-        // Default langsung nyalakan tracking
-        showTracking = true;
-        virtualBtn.material.color.setHex(0x00ff00);
+        startAROrCamera();
     });
 }
 
@@ -1363,6 +1349,12 @@ function showScreen(name) {
     if (name === 'home') {
         screenHome.classList.add('active');
         screenBuilder.classList.remove('active');
+        // Stop AR or camera when going home
+        if (isWebXRMode && renderer.xr.getSession()) {
+            renderer.xr.getSession().end();
+        } else if (cameraActive) {
+            stopCamera();
+        }
     } else {
         screenHome.classList.remove('active');
         screenBuilder.classList.add('active');
@@ -1378,6 +1370,7 @@ if (navBuilder) navBuilder.addEventListener('click', () => {
     const hud = document.getElementById('game-hud');
     if (hud) hud.classList.add('hidden');
     showScreen('builder');
+    startAROrCamera();
 });
 if (navHome2) navHome2.addEventListener('click', () => {
     exitLevel();
@@ -1388,6 +1381,7 @@ if (navBuilder2) navBuilder2.addEventListener('click', () => {
     const hud = document.getElementById('game-hud');
     if (hud) hud.classList.add('hidden');
     showScreen('builder');
+    startAROrCamera();
 });
 
 // Carousel: highlight selection + spawn shape
@@ -1501,9 +1495,27 @@ if (btnDelete) {
 
 // Create or update the main block object according to selection
 function createOrUpdateBlock(shape, colorHex) {
-    // Memunculkan balok baru dengan posisi random di sumbu X agar tidak bertumpuk persis
-    const randomX = (Math.random() - 0.5) * 4;
-    spawnBlock(shape, colorHex, randomX, 3, 0);
+    let spawnY = 3;
+    let spawnX = 0;
+    let spawnZ = 0;
+
+    if (isWebXRMode) {
+        if (!tableLocked) {
+            updateStatus("Tolong arahkan ke meja dan tap layar untuk mengunci meja dulu.");
+            return;
+        }
+        // Munculkan balok sedikit di atas meja agar jatuh natural
+        spawnY = floorY + 0.2;
+        // Posisi di sekitar reticle X dan Z (tengah layar)
+        spawnX = reticle.position.x + (Math.random() - 0.5) * 0.1;
+        spawnZ = reticle.position.z + (Math.random() - 0.5) * 0.1;
+    } else {
+        spawnY = 3;
+        spawnX = (Math.random() - 0.5) * 4;
+        spawnZ = 0;
+    }
+
+    spawnBlock(shape, colorHex, spawnX, spawnY, spawnZ);
 }
 
 // --- LOGIKA EVENT LISTENERS TOMBOL BARU ---
@@ -1584,6 +1596,8 @@ function createBlueprintGeometry(shape) {
     }
     return geo;
 }
+
+
 
 function startLevel(levelKey) {
     clearLevel();
@@ -1780,6 +1794,8 @@ document.querySelectorAll('.lvl-btn').forEach(btn => {
             levelSelectorOverlay.classList.add('hidden');
         }
         startLevel(levelKey);
+        showScreen('builder');
+        startAROrCamera();
     });
 });
 
@@ -1805,6 +1821,7 @@ if (btnSuccessRetry) {
     btnSuccessRetry.addEventListener('click', () => {
         document.getElementById('success-modal').classList.add('hidden');
         if (currentGameLevel) startLevel(currentGameLevel);
+        startAROrCamera();
     });
 }
 
