@@ -9,6 +9,63 @@ camera.position.z = 10;
 const renderer = new THREE.WebGLRenderer({ canvas: canvas, alpha: true, antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setPixelRatio(window.devicePixelRatio);
+renderer.xr.enabled = true; // Enable WebXR
+
+const builderScreen = document.getElementById('screen-builder');
+if (builderScreen) {
+    const arBtn = document.createElement('button');
+    arBtn.style.position = 'absolute';
+    arBtn.style.bottom = '80px';
+    arBtn.style.left = 'calc(50% - 50px)';
+    arBtn.style.width = '100px';
+    arBtn.style.padding = '12px 6px';
+    arBtn.style.border = '1px solid #fff';
+    arBtn.style.borderRadius = '4px';
+    arBtn.style.background = 'rgba(0,0,0,0.5)';
+    arBtn.style.color = '#fff';
+    arBtn.style.fontFamily = 'sans-serif';
+    arBtn.style.textAlign = 'center';
+    arBtn.style.cursor = 'pointer';
+    arBtn.style.zIndex = '999';
+    arBtn.innerHTML = 'ENTER AR';
+
+    let currentSession = null;
+    
+    if ('xr' in navigator) {
+        navigator.xr.isSessionSupported('immersive-ar').then((supported) => {
+            if (supported) {
+                arBtn.onclick = () => {
+                    if (currentSession === null) {
+                        navigator.xr.requestSession('immersive-ar', { requiredFeatures: ['hit-test'] }).then((session) => {
+                            currentSession = session;
+                            renderer.xr.setReferenceSpaceType('local');
+                            renderer.xr.setSession(session);
+                            arBtn.innerHTML = 'EXIT AR';
+                            
+                            session.addEventListener('end', () => {
+                                currentSession = null;
+                                arBtn.innerHTML = 'ENTER AR';
+                            });
+                        }).catch((err) => {
+                            updateStatus('Gagal memulai AR: ' + err.message, true);
+                        });
+                    } else {
+                        currentSession.end();
+                    }
+                };
+            } else {
+                arBtn.innerHTML = 'AR NOT SUPPORTED';
+                arBtn.disabled = true;
+            }
+        });
+    } else {
+        arBtn.innerHTML = 'HTTPS REQUIRED';
+        arBtn.disabled = true;
+        console.warn('WebXR tidak tersedia. Pastikan Anda menggunakan HTTPS atau localhost.');
+    }
+    
+    builderScreen.appendChild(arBtn);
+}
 
 const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
 scene.add(ambientLight);
@@ -61,6 +118,55 @@ const floor = new THREE.Mesh(floorGeometry, floorMaterial);
 floor.rotation.x = Math.PI / -2;
 floor.position.y = floorY;
 scene.add(floor);
+
+// ==========================================
+// 1.5 WEBXR HIT TEST & RETICLE
+// ==========================================
+let hitTestSource = null;
+let hitTestSourceRequested = false;
+let isWebXRMode = false;
+
+const reticleGeometry = new THREE.RingGeometry(0.15, 0.2, 32).rotateX(-Math.PI / 2);
+const reticleMaterial = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
+const reticle = new THREE.Mesh(reticleGeometry, reticleMaterial);
+reticle.matrixAutoUpdate = false;
+reticle.visible = false;
+scene.add(reticle);
+
+const xrController = renderer.xr.getController(0);
+xrController.addEventListener('select', onXRSelect);
+scene.add(xrController);
+
+function onXRSelect() {
+    if (isWebXRMode && reticle.visible) {
+        // Set floor to reticle's Y position
+        const newFloorY = reticle.position.y;
+        updateFloorPosition(newFloorY, 0, false);
+        updateStatus('Lantai AR disetel pada Y: ' + newFloorY.toFixed(2));
+        
+        // Optionally spawn a block if we are holding one, or just let them use the UI
+        // We can just rely on the UI to spawn blocks on the new floor
+    }
+}
+
+renderer.xr.addEventListener('sessionstart', () => {
+    isWebXRMode = true;
+    updateStatus('Mode AR aktif. Arahkan kamera ke lantai lalu tap layar untuk set lantai.');
+    
+    // Matikan kamera MediaPipe jika sedang menyala agar tidak crash
+    if (cameraActive) {
+        stopCamera();
+    }
+});
+
+renderer.xr.addEventListener('sessionend', () => {
+    isWebXRMode = false;
+    hitTestSourceRequested = false;
+    hitTestSource = null;
+    reticle.visible = false;
+    updateStatus('Keluar dari Mode AR.');
+});
+
 
 // ==========================================
 // 1B. SETUP PHYSICS (CANNON.JS)
@@ -1166,11 +1272,40 @@ function updateScaleBadge() {
 // ==========================================
 // 5. ANIMASI & FISIKA GRAVITASI
 // ==========================================
-function animate() {
-    requestAnimationFrame(animate);
-
+function animate(timestamp, frame) {
     // Majukan simulasi fisika Cannon.js
     world.step(1 / 60);
+
+    // Hit test logic untuk WebXR
+    if (isWebXRMode && hitTestSourceRequested === false && renderer.xr.getSession()) {
+        const session = renderer.xr.getSession();
+        session.requestReferenceSpace('viewer').then((referenceSpace) => {
+            session.requestHitTestSource({ space: referenceSpace }).then((source) => {
+                hitTestSource = source;
+            });
+        });
+        session.addEventListener('end', () => {
+            hitTestSourceRequested = false;
+            hitTestSource = null;
+        });
+        hitTestSourceRequested = true;
+    }
+
+    if (isWebXRMode && hitTestSource && frame) {
+        const referenceSpace = renderer.xr.getReferenceSpace();
+        const hitTestResults = frame.getHitTestResults(hitTestSource);
+
+        if (hitTestResults.length > 0) {
+            const hit = hitTestResults[0];
+            const pose = hit.getPose(referenceSpace);
+
+            reticle.visible = true;
+            reticle.matrix.fromArray(pose.transform.matrix);
+            reticle.position.setFromMatrixPosition(reticle.matrix);
+        } else {
+            reticle.visible = false;
+        }
+    }
 
     // Smooth interpolasi lantai
     smoothFloorUpdate();
@@ -1211,7 +1346,7 @@ function animate() {
 }
 
 // Jalankan animasi secara terus-menerus
-animate();
+renderer.setAnimationLoop(animate);
 
 // =====================
 // UI INTERACTIONS
