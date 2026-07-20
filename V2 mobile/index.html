@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="id">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Studio Rancang AR</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+    <!-- UI: Home Screen -->
+    <div id="screen-home" class="screen active">
+        <header class="home-header">
+            <div class="avatar">☀️</div>
+            <div class="greeting">
+                <h2>Ayo Bermain!</h2>
+                <p>Pilih petualanganmu hari ini</p>
+            </div>
+        </header>
+
+        <main class="home-main">
+            <button class="big-btn yellow">Bangun Ruang<span class="sub">Mengenal bentuk 3D!</span></button>
+            <button class="big-btn green">Susun Balok<span class="sub">Ayo buat menara!</span></button>
+            <button class="big-btn blue">Tantangan Bentuk<span class="sub">Pasangkan bentuknya!</span></button>
+        </main>
+
+        <nav class="home-bottomnav">
+            <button id="nav-home" class="nav-item active">🏠</button>
+            <button id="nav-builder" class="nav-item">📷</button>
+            <button id="nav-profile" class="nav-item">⭐</button>
+        </nav>
+    </div>
+
+    <!-- UI: Builder / AR Screen -->
+    <div id="screen-builder" class="screen">
+        <div id="status">Klik tombol untuk mengaktifkan kamera</div>
+        <button id="btn-tracking">Aktifkan Kamera</button>
+
+        <div class="top-center-controls">
+            <button id="btn-undo" class="tc-btn undo">↺</button>
+            <button id="btn-redo" class="tc-btn redo">↻</button>
+        </div>
+
+        <video id="webcam" autoplay playsinline muted></video>
+        <canvas id="tracking_canvas"></canvas>
+        <canvas id="output_canvas"></canvas>
+
+        <!-- Floating Scale/Size Indicator Overlay -->
+        <div id="scale-badge" class="scale-badge hidden">
+            <div class="scale-title">Dimensi</div>
+            <div class="scale-value">100%</div>
+            <div class="scale-dims">2.00 × 2.00 × 2.00</div>
+        </div>
+
+        <!-- Right-side controls -->
+        <div class="right-controls">
+            <button class="rc-btn mute">🔊</button>
+            <div class="color-picker-container">
+                <button id="btn-color-picker" class="rc-btn color-picker">🎨</button>
+                <div id="color-palette" class="color-palette hidden">
+                    <button class="color-dot red" data-color="0xFF6B6B"></button>
+                    <button class="color-dot green" data-color="0x39C07A"></button>
+                    <button class="color-dot blue" data-color="0x2B9CFF"></button>
+                    <button class="color-dot yellow" data-color="0xFFD24D"></button>
+                    <button class="color-dot orange" data-color="0xFF9D00"></button>
+                    <button class="color-dot purple" data-color="0x9b59b6"></button>
+                </div>
+            </div>
+            <button class="rc-btn like">👍</button>
+            <button id="btn-delete" class="rc-btn delete">🗑️</button>
+        </div>
+
+        <!-- Bottom floating camera + carousel -->
+        <div class="bottom-fab">
+            <button id="btn-scroll-up" class="scroll-btn">▲</button>
+            <div id="carousel-wrapper" class="carousel-wrapper">
+                <div id="carousel" class="carousel">
+                    <!-- Kubus -->
+                    <button class="block blue" data-shape="cube">
+                        <svg viewBox="0 0 40 40"><rect x="8" y="8" width="24" height="24" rx="3" fill="currentColor"/></svg>
+                        <span>Kubus</span>
+                    </button>
+                    <!-- Balok / Plank -->
+                    <button class="block yellow" data-shape="plank">
+                        <svg viewBox="0 0 40 40"><rect x="4" y="12" width="32" height="16" rx="2" fill="currentColor"/></svg>
+                        <span>Balok</span>
+                    </button>
+                    <!-- Segitiga -->
+                    <button class="block red" data-shape="tri">
+                        <svg viewBox="0 0 40 40"><polygon points="20,6 4,34 36,34" fill="currentColor"/></svg>
+                        <span>Segitiga</span>
+                    </button>
+                    <!-- Silinder -->
+                    <button class="block orange" data-shape="cylinder">
+                        <svg viewBox="0 0 40 40"><rect x="12" y="6" width="16" height="28" rx="8" fill="currentColor"/></svg>
+                        <span>Silinder</span>
+                    </button>
+                    <!-- Piramida -->
+                    <button class="block green" data-shape="pyramid">
+                        <svg viewBox="0 0 40 40"><polygon points="20,4 2,36 38,36" fill="currentColor"/></svg>
+                        <span>Piramida</span>
+                    </button>
+                    <!-- Setengah Lingkaran -->
+                    <button class="block purple" data-shape="halfsphere">
+                        <svg viewBox="0 0 40 40"><path d="M4,30 A16,16 0 0,1 36,30 Z" fill="currentColor"/></svg>
+                        <span>½ Bola</span>
+                    </button>
+                    <!-- Lengkungan / Arch -->
+                    <button class="block red" data-shape="arch">
+                        <svg viewBox="0 0 40 40"><path d="M4,36 L4,12 A16,16 0 0,1 36,12 L36,36 L28,36 L28,20 A8,8 0 0,0 12,20 L12,36 Z" fill="currentColor"/></svg>
+                        <span>Gapura</span>
+                    </button>
+                    <!-- Dodecahedron -->
+                    <button class="block green" data-shape="pent">
+                        <svg viewBox="0 0 40 40"><circle cx="20" cy="20" r="16" fill="currentColor"/></svg>
+                        <span>Bola</span>
+                    </button>
+                    <!-- Kubus Merah -->
+                    <button class="block red" data-shape="cube">
+                        <svg viewBox="0 0 40 40"><rect x="8" y="8" width="24" height="24" rx="3" fill="currentColor"/></svg>
+                        <span>Kubus</span>
+                    </button>
+                    <!-- Silinder Kuning -->
+                    <button class="block yellow" data-shape="cylinder">
+                        <svg viewBox="0 0 40 40"><rect x="12" y="6" width="16" height="28" rx="8" fill="currentColor"/></svg>
+                        <span>Silinder</span>
+                    </button>
+                    <!-- Balok Biru -->
+                    <button class="block blue" data-shape="plank">
+                        <svg viewBox="0 0 40 40"><rect x="4" y="12" width="32" height="16" rx="2" fill="currentColor"/></svg>
+                        <span>Balok</span>
+                    </button>
+                    <!-- ½ Bola Kuning -->
+                    <button class="block yellow" data-shape="halfsphere">
+                        <svg viewBox="0 0 40 40"><path d="M4,30 A16,16 0 0,1 36,30 Z" fill="currentColor"/></svg>
+                        <span>½ Bola</span>
+                    </button>
+                </div>
+            </div>
+            <button id="btn-scroll-down" class="scroll-btn">▼</button>
+            <button id="camera-btn" class="camera-btn">📷</button>
+        </div>
+
+        <!-- Level Selector Overlay (Susun Balok Mode) -->
+        <div id="level-selector-overlay" class="level-overlay hidden">
+            <div class="level-card">
+                <h2>Tantangan Susun Balok</h2>
+                <p>Pilih tingkat kesulitan menara yang ingin Anda bangun:</p>
+                <div class="level-buttons">
+                    <button class="lvl-btn easy" data-level="easy">🟢 Mudah (Menara Dasar)</button>
+                    <button class="lvl-btn medium" data-level="medium">🟡 Sedang (Menara Gerbang)</button>
+                    <button class="lvl-btn hard" data-level="hard">🔴 Sulit (Kastil Megah)</button>
+                </div>
+                <button id="btn-close-level-selector" class="lvl-btn-back">Kembali</button>
+            </div>
+        </div>
+
+        <!-- Success Modal Overlay -->
+        <div id="success-modal" class="level-overlay hidden">
+            <div class="level-card success-card">
+                <h2>🎉 Luar Biasa! 🎉</h2>
+                <p>Anda berhasil menyusun menara sesuai dengan blueprint!</p>
+                <button id="btn-success-retry" class="lvl-btn easy" style="width: 100%; justify-content: center; margin-bottom: 10px;">Main Lagi</button>
+                <button id="btn-success-levels" class="lvl-btn-back">Pilih Level Lain</button>
+            </div>
+        </div>
+
+        <!-- Game HUD -->
+        <div id="game-hud" class="game-hud hidden">
+            <div class="hud-title">Tantangan: <span id="hud-level-name">-</span></div>
+            <div class="hud-status">Kumpulkan balok sesuai panduan hologram.</div>
+            <div class="hud-buttons">
+                <button id="btn-reset-level" class="hud-btn reset">🔄 Reset</button>
+                <button id="btn-exit-level" class="hud-btn exit">🚪 Keluar</button>
+            </div>
+        </div>
+
+        <nav class="builder-bottomnav">
+            <button id="nav-home-2" class="nav-item">🏠</button>
+            <button id="nav-builder-2" class="nav-item active">📷</button>
+            <button id="nav-profile-2" class="nav-item">⭐</button>
+        </nav>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js"
+        crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"
+        crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/cannon.js/0.6.2/cannon.min.js"></script>
+
+    <script src="js/app.js"></script>
+</body>
+
+</html>
