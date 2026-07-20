@@ -428,7 +428,7 @@ let isSelected = false;
 let showTracking = false;
 let cameraActive = false;
 let btnCooldown = 0;
-let cameraUtils;
+let useBackCamera = false; // false = kamera depan (default), true = kamera belakang
 
 const trackingCanvas = document.getElementById('tracking_canvas');
 const trackingCtx = trackingCanvas.getContext('2d');
@@ -444,8 +444,14 @@ const cameraBtn = document.getElementById('camera-btn');
 // 3. FUNGSI BANTUAN MATEMATIKA & KAMERA
 // ==========================================
 function mapTo3DSpace(x, y) {
-    const mirroredX = 1 - x;
-    return { x: (mirroredX - 0.5) * 14, y: -(y - 0.5) * 10 };
+    if (useBackCamera) {
+        // Kamera belakang: tidak perlu mirror
+        return { x: (x - 0.5) * 14, y: -(y - 0.5) * 10 };
+    } else {
+        // Kamera depan: perlu mirror X
+        const mirroredX = 1 - x;
+        return { x: (mirroredX - 0.5) * 14, y: -(y - 0.5) * 10 };
+    }
 }
 
 function getDistance(p1, p2) {
@@ -461,34 +467,57 @@ function updateStatus(message, isError = false) {
     }
 }
 
-// Fungsi Menyalakan Kamera Tanpa Bentrok
+// Fungsi Menyalakan Kamera (Depan atau Belakang)
+let cameraAnimFrameId = null;
 function startCamera() {
-    updateStatus('Meminta akses kamera...');
+    const cameraLabel = useBackCamera ? 'belakang' : 'depan';
+    updateStatus('Meminta akses kamera ' + cameraLabel + '...');
 
-    if (!cameraUtils) {
-        cameraUtils = new Camera(videoElement, {
-            onFrame: async () => {
+    // Pilih facingMode berdasarkan mode kamera
+    const facingMode = useBackCamera ? 'environment' : 'user';
+    const constraints = {
+        video: {
+            facingMode: { ideal: facingMode },
+            width: { ideal: 640 },
+            height: { ideal: 480 }
+        }
+    };
+
+    // Toggle CSS class untuk mirror/no-mirror
+    if (useBackCamera) {
+        videoElement.classList.add('back-camera');
+        trackingCanvas.classList.add('back-camera');
+    } else {
+        videoElement.classList.remove('back-camera');
+        trackingCanvas.classList.remove('back-camera');
+    }
+
+    navigator.mediaDevices.getUserMedia(constraints)
+        .then((stream) => {
+            videoElement.srcObject = stream;
+            videoElement.play();
+
+            // Loop pengiriman frame ke MediaPipe Hands
+            async function sendFrame() {
+                if (!cameraActive) return;
                 if (videoElement.readyState >= 2) {
                     await hands.send({ image: videoElement });
                 }
-            },
-            width: 640,
-            height: 480
-        });
-    }
+                cameraAnimFrameId = requestAnimationFrame(sendFrame);
+            }
 
-    cameraUtils.start()
-        .then(() => {
-            updateStatus('Kamera aktif. Tunjukkan tangan ke depan kamera.');
-            // show tracking by default when camera starts
-            showTracking = true;
-            cameraActive = true;
-            virtualBtn.material.color.setHex(0x00ff00);
-            if (cameraBtn) cameraBtn.classList.add('active');
+            videoElement.onloadeddata = () => {
+                cameraActive = true;
+                showTracking = true;
+                virtualBtn.material.color.setHex(0x00ff00);
+                if (cameraBtn) cameraBtn.classList.add('active');
+                updateStatus('Kamera ' + cameraLabel + ' aktif. Tunjukkan tangan ke kamera.');
+                sendFrame();
+            };
         })
         .catch((error) => {
-            console.error('Gagal mengakses kamera:', error);
-            updateStatus('Gagal menyalakan kamera. Izinkan kamera di browser.', true);
+            console.error('Gagal mengakses kamera ' + cameraLabel + ':', error);
+            updateStatus('Gagal menyalakan kamera ' + cameraLabel + '. Izinkan kamera di browser.', true);
             cameraActive = false;
             if (cameraBtn) cameraBtn.classList.remove('active');
         });
@@ -496,9 +525,10 @@ function startCamera() {
 
 // Fungsi Mematikan Kamera
 function stopCamera() {
-    if (cameraUtils) {
-        try { cameraUtils.stop(); } catch (e) { }
-        cameraUtils = null;
+    // Hentikan animation frame loop
+    if (cameraAnimFrameId) {
+        cancelAnimationFrame(cameraAnimFrameId);
+        cameraAnimFrameId = null;
     }
     // Hentikan track video secara manual untuk mematikan lampu indikator kamera
     if (videoElement.srcObject) {
@@ -522,6 +552,24 @@ function toggleCamera() {
     }
 }
 
+// Fungsi Switch Kamera Depan/Belakang
+function switchCamera() {
+    useBackCamera = !useBackCamera;
+    // Update tampilan tombol switch
+    const switchBtn = document.getElementById('btn-switch-camera');
+    if (switchBtn) {
+        switchBtn.textContent = useBackCamera ? '📱' : '🔄';
+        switchBtn.title = useBackCamera ? 'Ganti ke Kamera Depan' : 'Ganti ke Kamera Belakang';
+    }
+    // Restart kamera jika sedang aktif
+    if (cameraActive) {
+        stopCamera();
+        setTimeout(() => startCamera(), 300); // delay sedikit agar stream lama benar-benar berhenti
+    }
+    const cameraLabel = useBackCamera ? 'belakang' : 'depan';
+    updateStatus('Mode kamera: ' + cameraLabel);
+}
+
 // Event Listener Tombol Fisik (HTML)
 if (btnTracking) {
     btnTracking.addEventListener('click', () => {
@@ -531,6 +579,14 @@ if (btnTracking) {
         // Default langsung nyalakan tracking
         showTracking = true;
         virtualBtn.material.color.setHex(0x00ff00);
+    });
+}
+
+// Event Listener Tombol Switch Kamera (Depan/Belakang)
+const btnSwitchCamera = document.getElementById('btn-switch-camera');
+if (btnSwitchCamera) {
+    btnSwitchCamera.addEventListener('click', () => {
+        switchCamera();
     });
 }
 
@@ -571,7 +627,7 @@ hands.onResults((results) => {
         // --- PINCH TO CLICK OR HOLD HTML BUTTONS ---
         let clickedHTMLButton = false;
         if (isHand1Pinching) {
-            const screenX = (1 - midX1) * window.innerWidth;
+            const screenX = useBackCamera ? (midX1 * window.innerWidth) : ((1 - midX1) * window.innerWidth);
             const screenY = midY1 * window.innerHeight;
             const element = document.elementFromPoint(screenX, screenY);
             if (element) {

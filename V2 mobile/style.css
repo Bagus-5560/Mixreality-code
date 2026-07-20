@@ -42,10 +42,12 @@ body {
     height: 100vh;
     object-fit: cover;
     z-index: 1;
-    transform: scaleX(-1); /* Mirror */
+    transform: scaleX(-1); /* Mirror untuk kamera depan (default) */
+}
+#webcam.back-camera {
+    transform: scaleX(1); /* Tidak mirror untuk kamera belakang */
 }
 
-/* Canvas untuk garis merah hijau MediaPipe */
 #tracking_canvas {
     position: absolute;
     top: 0;
@@ -54,7 +56,10 @@ body {
     height: 100vh;
     z-index: 2; /* Di atas webcam */
     pointer-events: none;
-    transform: scaleX(-1); /* Wajib mirror juga */
+    transform: scaleX(-1); /* Mirror untuk kamera depan (default) */
+}
+#tracking_canvas.back-camera {
+    transform: scaleX(1); /* Tidak mirror untuk kamera belakang */
 }
 
 /* Canvas 3D Three.js */
