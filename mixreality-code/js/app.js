@@ -1635,12 +1635,17 @@ if (btnSuccessHome) {
     });
 }
 
-window.addEventListener('resize', () => {
+function handleResize() {
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
     renderer.setSize(window.innerWidth, window.innerHeight);
     trackingCanvas.width = window.innerWidth;
     trackingCanvas.height = window.innerHeight;
+}
+
+window.addEventListener('resize', handleResize);
+window.addEventListener('orientationchange', () => {
+    setTimeout(handleResize, 200);
 });
 
 // ==========================================

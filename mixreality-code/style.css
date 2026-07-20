@@ -2,118 +2,99 @@
     margin: 0;
     padding: 0;
     box-sizing: border-box;
+    -webkit-tap-highlight-color: transparent;
 }
 
-body {
+html, body {
     overflow: hidden;
     background-color: #000;
-    position: relative;
-    width: 100vw;
-    height: 100vh;
+    position: fixed;
+    width: 100%;
+    height: 100%;
+    height: 100dvh;
+    overscroll-behavior: none;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+    touch-action: manipulation;
 }
 
-/* Desain Tombol Kanan Atas */
-#btn-tracking {
-    position: absolute;
-    top: 20px;
-    right: 20px;
-    z-index: 10; /* Paling atas biar bisa diklik */
-    padding: 12px 24px;
-    background-color: #ff9d00;
-    border: none;
-    border-radius: 8px;
-    color: #000;
-    font-weight: bold;
-    font-family: sans-serif;
-    cursor: pointer;
-    box-shadow: 0 4px 6px rgba(0,0,0,0.3);
-    transition: 0.2s;
-}
-
-#btn-tracking:active {
-    transform: scale(0.95);
-}
-
-#webcam {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100vw;
-    height: 100vh;
-    object-fit: cover;
-    z-index: 1;
-    transform: scaleX(-1); /* Mirror */
-}
-
-/* Canvas untuk garis merah hijau MediaPipe */
-#tracking_canvas {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100vw;
-    height: 100vh;
-    z-index: 2; /* Di atas webcam */
-    pointer-events: none;
-    transform: scaleX(-1); /* Wajib mirror juga */
-}
-
-/* Canvas 3D Three.js */
-#output_canvas {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100vw;
-    height: 100vh;
-    z-index: 3; /* Paling atas di bawah tombol */
-    pointer-events: none;
-}
 /* Desain Teks Status di Kiri Atas */
 #status {
     position: absolute;
-    top: 20px;
-    left: 20px;
-    z-index: 10;
+    top: max(16px, env(safe-area-inset-top));
+    left: max(14px, env(safe-area-inset-left));
+    z-index: 25;
     color: #ffffff;
-    padding: 10px 20px;
-    border-radius: 8px;
-    font-family: sans-serif;
-    font-size: 14px;
-    pointer-events: none; /* Biar nggak menghalangi klik */
-    transition: 0.3s;
+    padding: 8px 14px;
+    border-radius: 10px;
+    font-family: system-ui, -apple-system, sans-serif;
+    font-size: 13px;
+    line-height: 1.3;
+    max-width: 220px;
+    background: rgba(0, 0, 0, 0.65);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    pointer-events: none;
+    transition: all 0.3s ease;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.2);
 }
 
 /* --- Screen layout --- */
-.screen { position: absolute; inset: 0; display: none; background: linear-gradient(180deg,#f6fbff 0%, #fff 60%); }
+.screen {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    height: 100dvh;
+    display: none;
+    background: linear-gradient(180deg, #f6fbff 0%, #fff 60%);
+    overflow: hidden;
+}
 .screen.active { display: block; }
 
 /* Home screen */
-.home-header { display:flex; align-items:center; gap:16px; padding:28px 20px 0 20px; }
+.home-header { display:flex; align-items:center; gap:16px; padding: calc(20px + env(safe-area-inset-top)) 20px 0 20px; }
 .avatar { width:88px; height:88px; background:#fff; border-radius:24px; display:flex; align-items:center; justify-content:center; font-size:44px; box-shadow:0 6px 16px rgba(0,0,0,0.12); }
 .greeting h2 { font-size:20px; color:#0b6; margin-bottom:6px; }
 .greeting p { font-size:13px; color:#666; }
 
 .home-main { display:flex; flex-direction:column; gap:18px; padding:28px 20px; }
-.big-btn { display:flex; flex-direction:column; align-items:flex-start; gap:6px; padding:18px 22px; border-radius:28px; color:#fff; font-size:18px; font-weight:700; border:none; box-shadow:0 8px 18px rgba(0,0,0,0.12); }
+.big-btn { display:flex; flex-direction:column; align-items:flex-start; gap:6px; padding:18px 22px; border-radius:28px; color:#fff; font-size:18px; font-weight:700; border:none; box-shadow:0 8px 18px rgba(0,0,0,0.12); cursor: pointer; }
 .big-btn .sub { display:block; font-size:13px; font-weight:500; opacity:0.9; }
 .big-btn.yellow { background:#FFD24D; color:#4b3b00 }
 .big-btn.green { background:#3EC77B; }
 .big-btn.blue { background:#48A9FF; }
 
-.home-bottomnav, .builder-bottomnav { position:fixed; left:0; right:0; bottom:14px; display:flex; justify-content:space-around; padding:8px 40px; z-index:20; }
-.nav-item { width:58px; height:58px; border-radius:14px; background:#fff; border:none; box-shadow:0 8px 18px rgba(0,0,0,0.12); font-size:20px; }
+.home-bottomnav, .builder-bottomnav {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: max(10px, env(safe-area-inset-bottom));
+    display: flex;
+    justify-content: space-around;
+    padding: 8px 40px;
+    z-index: 30;
+}
+.nav-item { width:58px; height:58px; border-radius:14px; background:#fff; border:none; box-shadow:0 8px 18px rgba(0,0,0,0.12); font-size:20px; cursor: pointer; }
 .nav-item.active { background:#00a8ff; color:#fff; }
 
 /* Builder/AR overlays */
-#webcam { position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; object-fit: cover; z-index: 1; transform: scaleX(-1); }
-#tracking_canvas { position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 3000; pointer-events: none; transform: scaleX(-1); }
-#output_canvas { position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 3; pointer-events: none; }
+#webcam { position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; height: 100dvh; object-fit: cover; z-index: 1; transform: scaleX(-1); }
+#tracking_canvas { position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; height: 100dvh; z-index: 3000; pointer-events: none; transform: scaleX(-1); }
+#output_canvas { position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; height: 100dvh; z-index: 3; pointer-events: none; }
 
-#btn-tracking { position: absolute; top: 18px; right: 20px; z-index: 20; padding: 12px 18px; background: #FFD24D; border-radius: 12px; border:none; font-weight:700; box-shadow:0 6px 12px rgba(0,0,0,0.18); }
-
-/* Kita pindahkan fungsi tombol kamera ke FAB bawah, jadi sembunyikan tombol atas */
 #btn-tracking { display: none !important; }
 
-.right-controls { position: absolute; right: 14px; top: 120px; display:flex; flex-direction:column; gap:12px; z-index:22; }
+.right-controls {
+    position: absolute;
+    right: max(12px, env(safe-area-inset-right));
+    top: max(80px, calc(16px + env(safe-area-inset-top)));
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    z-index: 25;
+}
 .rc-btn { width:52px; height:52px; border-radius:12px; border:none; background:linear-gradient(180deg,#fff,#f0f0f0); box-shadow:0 8px 20px rgba(0,0,0,0.12); font-size:20px; cursor: pointer; transition: 0.2s; }
 .rc-btn:active { transform: scale(0.95); }
 .rc-btn.delete {
@@ -137,12 +118,12 @@ body {
 /* Top Center Controls (Undo & Redo) */
 .top-center-controls {
     position: absolute;
-    top: 20px;
+    top: max(16px, env(safe-area-inset-top));
     left: 50%;
     transform: translateX(-50%);
     display: flex;
     gap: 12px;
-    z-index: 22;
+    z-index: 25;
 }
 .tc-btn {
     width: 52px;
@@ -175,7 +156,7 @@ body {
     border-radius: 12px;
     box-shadow: 0 8px 20px rgba(0,0,0,0.15);
     transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-    z-index: 23;
+    z-index: 26;
 }
 .color-palette.hidden {
     opacity: 0;
@@ -208,15 +189,15 @@ body {
 
 .bottom-fab {
     position: absolute;
-    left: 20px;
+    left: max(12px, env(safe-area-inset-left));
     top: 50%;
     transform: translateY(-50%);
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 14px;
-    z-index: 21;
-    max-height: calc(100vh - 180px);
+    gap: 10px;
+    z-index: 25;
+    max-height: calc(100dvh - 160px);
 }
 
 /* Scrollable Carousel Wrapper */
@@ -234,7 +215,7 @@ body {
     display: flex;
     flex-direction: column;
     gap: 10px;
-    padding: 14px 10px;
+    padding: 12px 8px;
     background: rgba(255,255,255,0.95);
     border-radius: 16px;
     box-shadow: 0 8px 24px rgba(0,0,0,0.12);
@@ -283,7 +264,7 @@ body {
 .carousel .orange { background: linear-gradient(135deg, #FF9D00, #e08800); }
 .carousel .purple { background: linear-gradient(135deg, #9b59b6, #8344a0); }
 
-.camera-btn { width:78px; height:78px; background:#fff; border-radius:50%; border:none; box-shadow:0 12px 28px rgba(0,0,0,0.18); font-size:26px; transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); flex-shrink: 0; }
+.camera-btn { width:78px; height:78px; background:#fff; border-radius:50%; border:none; box-shadow:0 12px 28px rgba(0,0,0,0.18); font-size:26px; transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); flex-shrink: 0; cursor: pointer; }
 .camera-btn.active {
     background: linear-gradient(135deg, #00c6ff, #0072ff);
     color: white;
@@ -362,7 +343,7 @@ body {
     justify-content: center;
     cursor: pointer;
     transition: all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-    z-index: 22;
+    z-index: 25;
     flex-shrink: 0;
 }
 .scroll-btn:active {
@@ -379,8 +360,9 @@ body {
     left: 0;
     width: 100%;
     height: 100%;
-    background: rgba(15, 23, 42, 0.45); /* Lebih transparan */
-    backdrop-filter: blur(6px); /* Mengurangi blur agar adegan 3D di belakang tetap terlihat */
+    height: 100dvh;
+    background: rgba(15, 23, 42, 0.45);
+    backdrop-filter: blur(6px);
     -webkit-backdrop-filter: blur(6px);
     display: flex;
     align-items: center;
@@ -394,7 +376,7 @@ body {
 .level-card {
     background: rgba(255, 255, 255, 0.95);
     border-radius: 24px;
-    padding: 30px;
+    padding: 24px;
     max-width: 400px;
     width: 90%;
     box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
@@ -407,27 +389,27 @@ body {
     to { transform: scale(1); }
 }
 .level-card h2 {
-    font-size: 24px;
-    margin-bottom: 12px;
+    font-size: 22px;
+    margin-bottom: 10px;
     color: #1e293b;
     font-weight: 800;
 }
 .level-card p {
-    font-size: 14px;
+    font-size: 13px;
     color: #64748b;
-    margin-bottom: 24px;
+    margin-bottom: 20px;
 }
 .level-buttons {
     display: flex;
     flex-direction: column;
-    gap: 12px;
-    margin-bottom: 20px;
+    gap: 10px;
+    margin-bottom: 18px;
 }
 .lvl-btn {
-    padding: 14px 20px;
+    padding: 12px 18px;
     border-radius: 14px;
     border: none;
-    font-size: 15px;
+    font-size: 14px;
     font-weight: 700;
     cursor: pointer;
     transition: all 0.2s ease;
@@ -470,7 +452,7 @@ body {
 
 /* Success Card customization */
 .success-card {
-    background: rgba(255, 255, 255, 0.35) !important; /* Transparan */
+    background: rgba(255, 255, 255, 0.45) !important;
     backdrop-filter: blur(20px);
     -webkit-backdrop-filter: blur(20px);
     border: 2px solid rgba(74, 222, 128, 0.6) !important;
@@ -488,34 +470,39 @@ body {
 /* HUD styles */
 .game-hud {
     position: absolute;
-    top: 20px;
-    left: 100px; /* Di sebelah kanan vertical carousel */
+    top: max(16px, env(safe-area-inset-top));
+    left: 50%;
+    transform: translateX(-50%);
     background: rgba(255, 255, 255, 0.95);
     backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
     border: 1.5px solid rgba(255, 255, 255, 0.6);
     border-radius: 16px;
-    padding: 12px 18px;
-    box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+    padding: 10px 16px;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.12);
     z-index: 100;
     font-family: system-ui, sans-serif;
-    max-width: 250px;
+    max-width: 280px;
+    width: calc(100% - 140px);
 }
 .game-hud.hidden {
     display: none !important;
 }
 .hud-title {
-    font-size: 14px;
+    font-size: 13px;
     font-weight: 800;
     color: #1e293b;
-    margin-bottom: 4px;
+    margin-bottom: 3px;
+    text-align: center;
 }
 .hud-title span {
     color: #2b9cff;
 }
 .hud-status {
-    font-size: 11px;
+    font-size: 10px;
     color: #64748b;
-    margin-bottom: 10px;
+    margin-bottom: 8px;
+    text-align: center;
 }
 .hud-buttons {
     display: flex;
@@ -542,7 +529,7 @@ body {
 }
 .hud-btn.exit:hover { background: #fecaca; }
 
-/* Komprehensif Mobile Responsiveness (UI & UX) */
+/* Komprehensif Mobile Responsiveness (UI & UX Portrait & Landscape) */
 @media (max-width: 768px) {
     /* Home Screen Tweaks */
     .avatar {
@@ -572,9 +559,10 @@ body {
     /* Status Text */
     #status {
         font-size: 11px !important;
-        top: 12px !important;
-        left: 12px !important;
-        padding: 6px 12px !important;
+        top: max(10px, env(safe-area-inset-top)) !important;
+        left: max(10px, env(safe-area-inset-left)) !important;
+        padding: 6px 10px !important;
+        max-width: 140px !important;
     }
 
     /* Builder Screen Layout & Button Sizes */
@@ -585,7 +573,7 @@ body {
         border-radius: 10px;
     }
     .top-center-controls {
-        top: 15px;
+        top: max(10px, env(safe-area-inset-top));
         gap: 8px;
     }
 
@@ -596,31 +584,31 @@ body {
         border-radius: 10px;
     }
     .right-controls {
-        right: 10px;
-        top: 80px;
+        right: max(8px, env(safe-area-inset-right));
+        top: max(70px, calc(10px + env(safe-area-inset-top)));
         gap: 8px;
     }
 
     /* Vertical Carousel Left Panel */
     .bottom-fab {
-        left: 10px;
-        gap: 8px;
-        max-height: calc(100vh - 160px);
+        left: max(8px, env(safe-area-inset-left));
+        gap: 6px;
+        max-height: calc(100dvh - 140px);
     }
     .scroll-btn {
-        width: 48px;
-        height: 48px;
+        width: 46px;
+        height: 46px;
         font-size: 18px;
         border-radius: 10px;
     }
     .carousel {
-        padding: 8px 6px;
+        padding: 8px 5px;
         border-radius: 12px;
         gap: 6px;
     }
     .carousel .block {
-        width: 48px;
-        height: 58px;
+        width: 46px;
+        height: 56px;
         border-radius: 10px;
         font-size: 9px;
         padding: 4px 2px;
@@ -633,8 +621,8 @@ body {
         font-size: 8px;
     }
     .camera-btn {
-        width: 60px;
-        height: 60px;
+        width: 58px;
+        height: 58px;
         font-size: 20px;
         border-radius: 50%;
     }
@@ -650,68 +638,130 @@ body {
         height: 26px;
     }
 
-    /* Game HUD Centered for Mobile to Prevent Collisions */
+    /* Game HUD */
     .game-hud {
-        position: absolute;
-        top: 75px;
+        top: max(65px, calc(50px + env(safe-area-inset-top)));
         left: 50%;
         transform: translateX(-50%);
-        max-width: 280px;
-        width: calc(100% - 130px); /* Meninggalkan ruang untuk tombol kiri dan kanan */
-        padding: 10px 14px;
+        max-width: 240px;
+        width: calc(100% - 120px);
+        padding: 8px 12px;
         border-radius: 12px;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-    }
-    .hud-title {
-        font-size: 12px;
-    }
-    .hud-status {
-        font-size: 10px;
-        margin-bottom: 8px;
-    }
-    .hud-btn {
-        padding: 5px 8px;
-        font-size: 10px;
     }
 
     /* Bottom Navigation Bar */
     .home-bottomnav, .builder-bottomnav {
-        bottom: 8px;
-        padding: 4px 20px;
+        bottom: max(6px, env(safe-area-inset-bottom));
+        padding: 4px 16px;
     }
     .nav-item {
-        width: 48px;
-        height: 48px;
+        width: 46px;
+        height: 46px;
         font-size: 18px;
         border-radius: 10px;
     }
 
-    /* Overlays (Level selector and victory modal) */
+    /* Overlays */
     .level-card {
-        padding: 20px;
-        width: 85%;
-        border-radius: 20px;
+        padding: 18px;
+        width: 88%;
+        border-radius: 18px;
     }
     .level-card h2 {
-        font-size: 20px;
-        margin-bottom: 8px;
+        font-size: 18px;
+        margin-bottom: 6px;
     }
     .level-card p {
-        font-size: 12px;
-        margin-bottom: 16px;
+        font-size: 11px;
+        margin-bottom: 14px;
     }
     .level-buttons {
         gap: 8px;
-        margin-bottom: 15px;
+        margin-bottom: 12px;
     }
     .lvl-btn {
-        padding: 10px 16px;
-        font-size: 13px;
+        padding: 10px 14px;
+        font-size: 12px;
         border-radius: 10px;
     }
     .lvl-btn-back {
-        padding: 10px 20px;
-        font-size: 13px;
+        padding: 10px 16px;
+        font-size: 12px;
         border-radius: 10px;
     }
 }
+
+/* Optimasi Landscape HP (max-height: 500px) */
+@media (max-height: 500px) {
+    .home-header {
+        padding-top: 10px;
+    }
+    .avatar {
+        width: 48px;
+        height: 48px;
+        font-size: 24px;
+    }
+    .home-main {
+        padding: 10px 20px;
+        gap: 8px;
+        flex-direction: row;
+    }
+    .big-btn {
+        flex: 1;
+        padding: 10px 14px;
+        font-size: 14px;
+    }
+
+    #status {
+        font-size: 10px !important;
+        max-width: 120px !important;
+        padding: 4px 8px !important;
+    }
+
+    .top-center-controls {
+        top: 6px;
+        gap: 6px;
+    }
+    .tc-btn, .rc-btn, .scroll-btn {
+        width: 36px;
+        height: 36px;
+        font-size: 14px;
+        border-radius: 8px;
+    }
+    .right-controls {
+        top: 6px;
+        gap: 6px;
+    }
+    .bottom-fab {
+        max-height: calc(100dvh - 70px);
+        gap: 4px;
+    }
+    .carousel {
+        padding: 4px;
+        gap: 4px;
+    }
+    .carousel .block {
+        width: 38px;
+        height: 44px;
+        font-size: 8px;
+        padding: 2px;
+    }
+    .carousel .block svg {
+        width: 16px;
+        height: 16px;
+    }
+    .camera-btn {
+        width: 42px;
+        height: 42px;
+        font-size: 16px;
+    }
+    .nav-item {
+        width: 38px;
+        height: 38px;
+        font-size: 16px;
+    }
+    .home-bottomnav, .builder-bottomnav {
+        bottom: 4px;
+        padding: 2px 10px;
+    }
+}
