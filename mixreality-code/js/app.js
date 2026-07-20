@@ -584,11 +584,9 @@ function flipCamera() {
         arShadowFloor.visible = true; // Aktifkan lantai bayangan realistis di atas video dunia nyata
         if (arReticle) arReticle.visible = true; // Aktifkan penanda deteksi dataran AR
         
-        // Posisikan kamera sudut AR untuk melihat permukaan tanah/meja
-        camera.position.set(0, 1, 9);
-        camera.lookAt(0, floorY + 1, 0);
+        resetARWorldAnchor(); // Kunci penjangkaran objek ke meja fisik di dunia nyata
         
-        updateStatus('Mode AR Aktif! Permukaan terdeteksi 🎯. Geser layar untuk melihat 360° sekeliling objek!');
+        updateStatus('Mode AR Dunia Nyata Aktif 📍. Objek 3D terkunci di atas meja Anda! Gerakkan/miringkan HP untuk melihat sekeliling objek dari berbagai sudut 360°.');
     }
     
     // Jika kamera sedang aktif, hentikan & jalankan kembali dengan facingMode baru
@@ -1556,13 +1554,60 @@ window.addEventListener('resize', () => {
 });
 
 // ==========================================
-// 6. EKSPLORASI KAMERA 360° MODE AR DUNIA NYATA
+// 6. PENJANGKARAN OBJEK MEJA REALISTIS & KONTROL KAMERA 360° (AR WORLD ANCHOR)
 // ==========================================
+let arAnchorOrientation = null;
+const AR_CAMERA_DISTANCE = 8.0;
+
+function resetARWorldAnchor() {
+    arAnchorOrientation = null;
+    camera.position.set(0, 1.5, AR_CAMERA_DISTANCE);
+    camera.lookAt(0, floorY + 1, 0);
+}
+
+// Sensor Gyroscope & Motion HP: Objek 3D Tetap Terkunci di Meja, Kamera Bergerak Sesuai Gerakan HP Physical
+if (window.DeviceOrientationEvent) {
+    window.addEventListener('deviceorientation', (e) => {
+        if (currentFacingMode !== 'environment') return;
+        
+        const alpha = e.alpha; // Yaw (0 hingga 360 deg)
+        const beta = e.beta;   // Pitch (-180 hingga 180 deg)
+        const gamma = e.gamma; // Roll (-90 hingga 90 deg)
+
+        if (alpha === null || beta === null || gamma === null) return;
+
+        // Catat posisi HP pertama kali saat AR diaktifkan sebagai titik acuan lokasi meja
+        if (!arAnchorOrientation) {
+            arAnchorOrientation = { alpha, beta, gamma };
+        }
+
+        // Hitung sudut relatif pergerakan fisik HP pengguna terhadap meja
+        const dAlpha = THREE.MathUtils.degToRad(alpha - arAnchorOrientation.alpha);
+        const dBeta = THREE.MathUtils.degToRad(beta - arAnchorOrientation.beta);
+        const dGamma = THREE.MathUtils.degToRad(gamma - arAnchorOrientation.gamma);
+
+        // Titik jangkar meja tempat objek 3D diletakkan
+        const anchor = new THREE.Vector3(0, floorY + 1, 0);
+
+        // Pindahkan posisi kamera 3D mengelilingi meja sesuai gerakan HP fisik pengguna
+        let theta = dAlpha;                       // Mengelilingi meja secara horizontal
+        let phi = (Math.PI / 3) + (dBeta * 0.8);   // Mengamati meja dari atas ke samping (Pitch)
+        phi = Math.max(0.15, Math.min(Math.PI / 2 - 0.05, phi));
+
+        camera.position.x = anchor.x + AR_CAMERA_DISTANCE * Math.sin(phi) * Math.sin(theta);
+        camera.position.y = anchor.y + AR_CAMERA_DISTANCE * Math.cos(phi);
+        camera.position.z = anchor.z + AR_CAMERA_DISTANCE * Math.sin(phi) * Math.cos(theta);
+
+        camera.rotation.z = -dGamma * 0.5; // Roll kemiringan kamera
+        camera.lookAt(anchor); // Kamera selalu menatap objek yang terkunci di meja
+    }, true);
+}
+
+// Tambahan Touch Pan / Drag untuk eksplorasi manual keliling meja
 let isOrbitingAR = false;
 let prevTouchX = 0;
 let prevTouchY = 0;
 
-// Drag / Sentuh layar untuk memutar kamera 360° mengelilingi objek 3D di dunia nyata
 window.addEventListener('touchstart', (e) => {
     if (currentFacingMode === 'environment' && e.touches.length === 1) {
         const target = e.target;
@@ -1581,37 +1626,22 @@ window.addEventListener('touchmove', (e) => {
         prevTouchX = e.touches[0].clientX;
         prevTouchY = e.touches[0].clientY;
 
-        // Hitung vektor jarak & sudut kamera mengelilingi titik pusat dunia nyata (0, floorY + 1, 0)
-        const center = new THREE.Vector3(0, floorY + 1, 0);
-        const offset = camera.position.clone().sub(center);
+        // Pindahkan posisi kamera mengelilingi titik jangkar meja (0, floorY + 1, 0)
+        const anchor = new THREE.Vector3(0, floorY + 1, 0);
+        const offset = camera.position.clone().sub(anchor);
         const radius = offset.length();
 
         let theta = Math.atan2(offset.x, offset.z);
-        let phi = Math.acos(Math.max(-1, Math.min(1, offset.y / radius)));
+        let phi = Math.acos(Math.max(-1, Math.min(1, (camera.position.y - anchor.y) / radius)));
 
         theta -= deltaX * 0.008;
         phi = Math.max(0.1, Math.min(Math.PI / 2 - 0.05, phi - deltaY * 0.008));
 
-        camera.position.x = center.x + radius * Math.sin(phi) * Math.sin(theta);
-        camera.position.y = center.y + radius * Math.cos(phi);
-        camera.position.z = center.z + radius * Math.sin(phi) * Math.cos(theta);
-        camera.lookAt(center);
+        camera.position.x = anchor.x + radius * Math.sin(phi) * Math.sin(theta);
+        camera.position.y = anchor.y + radius * Math.cos(phi);
+        camera.position.z = anchor.z + radius * Math.sin(phi) * Math.cos(theta);
+        camera.lookAt(anchor);
     }
 });
 
 window.addEventListener('touchend', () => { isOrbitingAR = false; });
-
-// Dukungan Sensor Gyroscope HP untuk gerakan kamera mengikuti arah HP pengguna
-if (window.DeviceOrientationEvent) {
-    window.addEventListener('deviceorientation', (e) => {
-        if (currentFacingMode === 'environment' && e.beta !== null && e.gamma !== null && !isOrbitingAR) {
-            // Gerakkan posisi kamera secara halus sesuai kemiringan HP
-            const pitch = THREE.MathUtils.degToRad(e.beta - 45); // Pitch kemiringan HP
-            const roll = THREE.MathUtils.degToRad(e.gamma);      // Roll kemiringan HP
-            
-            camera.position.x = roll * 2;
-            camera.position.y = floorY + 3.5 + Math.sin(pitch) * 2;
-            camera.lookAt(0, floorY + 1, 0);
-        }
-    }, true);
-}
